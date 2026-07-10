@@ -247,6 +247,8 @@ process {
             Build-RustProject @buildParams -Audit:$Audit -Clippy:$Clippy @VerboseParam
             Write-BuildProgress @progressParams -Status "Copying build artifacts"
             Copy-BuildArtifact @buildParams -ExecutableFile $BuildData.PackageFiles.Executable @VerboseParam
+            Write-BuildProgress @progressParams -Status "Bundling Python SDK"
+            Copy-PythonAdapterSdk -Architecture $Architecture -Release:$Release @VerboseParam
         }
     }
 
