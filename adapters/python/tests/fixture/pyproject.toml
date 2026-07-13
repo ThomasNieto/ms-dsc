@@ -7,7 +7,7 @@ name = "dsc-test-resource"
 version = "0.1.0"
 description = "Test fixture DSC resources for the Python adapter test suite."
 requires-python = ">=3.11"
-dependencies = ["ms-dsc"]
+dependencies = []
 
 [project.entry-points."microsoft.dsc.resources"]
 "DscTest/Get"       = "dsc_test_resource.resources:GetResource"

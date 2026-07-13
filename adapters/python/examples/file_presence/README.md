@@ -10,13 +10,16 @@ resource using the `ms-dsc` SDK.
 
 ## Usage
 
-After installing this package:
+After installing this package for development:
 
 ```bash
 pip install -e .
 ```
 
-```bash
+This automatically fetches `ms-dsc` as a build-time dependency (for IDE support and schema generation).
+Note that `ms-dsc` is **not** a runtime dependency; it's provided by DSC when the resource is used via the adapter.
+
+Usage examples:
 # Get current state
 dsc resource get --resource Example/FilePresence --input '{"path":"/tmp/hello.txt"}'
 

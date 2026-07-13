@@ -4,9 +4,15 @@ Python SDK for writing [Microsoft DSC v3](https://github.com/PowerShell/DSC) res
 
 ## Installation
 
+For **development**, install the package in editable mode with build-time dependencies:
+
 ```bash
-pip install ms-dsc
+pip install -e .
 ```
+
+The build system will automatically install `ms-dsc` from PyPI for schema generation and IDE support.
+
+**Note:** Resources deployed to production should declare `ms-dsc` only as a build-time dependency (`[build-system] requires`), not in `dependencies`. DSC provides `ms-dsc` at runtime via the bundled copy.
 
 ## Quick start
 
@@ -65,22 +71,31 @@ class MyResource(DscResource[MySchema]):
         yield MySchema(name="example", _exist=True)
 ```
 
-Register the resource as an entry point in `pyproject.toml`:
+Register the resource as an entry point in `pyproject.toml` using the **plugin pattern**:
 
 ```toml
+[build-system]
+requires = ["hatchling", "ms-dsc"]  # Build-time: for schema generation
+build-backend = "hatchling.build"
+
 [project]
 name = "my-package"
-dependencies = ["ms-dsc"]
+dependencies = []                    # Runtime: EMPTY (DSC provides ms-dsc)
 
 [project.entry-points."microsoft.dsc.resources"]
 "MyPackage/MyResource" = "my_package.my_resource:MyResource"
 ```
 
+**Why?** DSC resources are plugins. They're intended for use within DSC (which bundles ms-dsc), not as standalone packages.
+This design:
+- Prevents duplicate dependencies when shipping with existing packages
+- Allows teams to add DSC resources to their infrastructure without forcing DSC on all users
+- Follows the same pattern as pytest plugins, Flask extensions, and Jupyter adapters
+
 Generate an adapted resource manifest so DSC can discover the resource without
 running the adapter's `list` operation:
 
 ```bash
-pip install ms-dsc
 dsc-gen manifest --out my_package/dsc/
 ```
 

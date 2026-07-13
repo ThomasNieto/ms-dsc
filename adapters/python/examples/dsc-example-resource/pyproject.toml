@@ -9,7 +9,7 @@ description = "Demo DSC resources for the Microsoft.Adapter/Python Python adapte
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-dependencies = ["ms-dsc"]
+dependencies = []
 
 [project.entry-points."microsoft.dsc.resources"]
 "Example/Greeting" = "dsc_example_resource.resources:GreetingResource"

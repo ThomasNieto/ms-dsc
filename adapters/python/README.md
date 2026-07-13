@@ -39,8 +39,10 @@ adapters/python/
 | Requirement | Purpose |
 |-------------|---------|
 | Python ≥ 3.11 | Adapter runtime (`python` on Windows, `python3` on Linux/macOS) |
-| `ms-dsc` (pip) | Required for resource authors (bundled in DSC package, see below) |
 | `dsc` CLI | DSC CLI integration tests only |
+
+**Note:** `ms-dsc` is bundled with DSC and automatically available to resources at runtime.
+For resource development, the build-time requirement is declared in `pyproject.toml` `[build-system] requires`.
 
 ## Bundled ms_dsc SDK
 
@@ -54,6 +56,18 @@ without a separate `pip install`.
 The build step (`Copy-PythonAdapterSdk` in `helpers.build.psm1`) copies the
 runtime-only subset of `ms_dsc/` — excluding the `build/` Hatchling hook and
 all `__pycache__/` directories.
+
+### Plugin architecture
+
+DSC resources follow a **plugin pattern** similar to pytest, Flask, and Jupyter extensions:
+
+- **Build-time only**: `ms-dsc` is declared in `[build-system] requires` for schema generation, decorators, and IDE support
+- **Not a runtime dependency**: Resources do NOT declare `ms-dsc` in `dependencies`
+  - DSC provides ms-dsc at runtime via the bundled copy
+  - Resources are intended for use within DSC; if shipped standalone, they fail gracefully without ms-dsc
+  - This allows resources to be included in existing packages without forcing DSC/ms-dsc on users
+
+See [Writing a Python DSC resource](#writing-a-python-dsc-resource) for the recommended `pyproject.toml` structure.
 
 ## Adapter invocation
 
@@ -84,8 +98,7 @@ echo '{"name":"World"}' | python -m pyadapter get --resource Example/Greeting
 ### Unit tests (no DSC required)
 
 ```bash
-# Install dependencies
-pip install ms-dsc
+# Install build-time dependencies and test fixture
 pip install -e tests/fixture/   # installs DscTest/* resources
 
 # Run
@@ -102,7 +115,7 @@ Invoke-Pester adapters/python/tests/integration/python.adapter.tests.ps1 -Output
 
 Requirements for integration tests:
 - Python on PATH as `python` (Windows) or `python3` (Linux/macOS)
-- `pip install ms-dsc` and `pip install -e adapters/python/tests/fixture/`
+- `pip install -e adapters/python/tests/fixture/` (fetches ms-dsc as a build-time dep)
 - DSC CLI on PATH (for the DSC CLI layer only)
 
 ## How discovery works
@@ -124,12 +137,37 @@ DSC discovers Python resources through two mechanisms:
 
 See [ms-dsc/README.md](ms-dsc/README.md) for the full SDK guide.
 
-Quick summary:
-1. Install `ms-dsc`: `pip install ms-dsc`
-2. Write a class decorated with `@dsc_resource`
-3. Register it as an entry point in `pyproject.toml`
-4. Run `dsc-gen manifest` to generate `*.dsc.adaptedResource.json`
-5. Include the manifest in your wheel as package data
+### Quick summary
+
+**pyproject.toml structure** (plugin pattern):
+
+```toml
+[build-system]
+requires = ["hatchling", "ms-dsc"]  # Build-time: schema generation
+build-backend = "hatchling.build"
+
+[project]
+name = "my-package"
+dependencies = []                    # Runtime: EMPTY (ms-dsc provided by DSC)
+
+[project.entry-points."microsoft.dsc.resources"]
+"MyOrg/MyResource" = "my_package.dsc_resource:MyResource"
+```
+
+**Development workflow**:
+
+1. Clone this repo or use `ms-dsc` from PyPI
+2. Create your package with the structure above
+3. Install for development: `pip install -e .` (automatically fetches ms-dsc build-time dep)
+4. Write a class decorated with `@dsc_resource`
+5. Run `dsc-gen manifest` to generate `*.dsc.adaptedResource.json`
+6. Include the manifest in your wheel as package data
+
+**Key points**:
+- ms-dsc is **only** declared in `[build-system] requires`, not `dependencies`
+- Your package can be installed without forcing users to install DSC or ms-dsc
+- Resources work seamlessly via DSC (which provides the bundled ms-dsc)
+- If someone installs your package outside of DSC and tries to import the resource code directly, they'll get a clear `ImportError` (which is correct — resources are DSC plugins)
 
 ## Examples
 
@@ -141,7 +179,6 @@ Quick summary:
 ### Try the demo package
 
 ```bash
-pip install ms-dsc
 pip install -e examples/dsc-example-resource/
 dsc-gen manifest --pyproject examples/dsc-example-resource/pyproject.toml \
                  --out examples/dsc-example-resource/dsc_example_resource/dsc

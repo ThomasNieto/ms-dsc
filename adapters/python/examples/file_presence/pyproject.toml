@@ -7,7 +7,7 @@ name = "dsc-example-file-presence"
 version = "1.0.0"
 description = "Example DSC resource: ensures a file exists or does not exist."
 requires-python = ">=3.11"
-dependencies = ["ms-dsc"]
+dependencies = []
 
 [project.entry-points."microsoft.dsc.resources"]
 "Example/FilePresence" = "file_presence.resource:FilePresenceResource"

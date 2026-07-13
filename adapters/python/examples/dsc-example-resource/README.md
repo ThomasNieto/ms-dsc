@@ -15,13 +15,15 @@ read-only, stateful read/write, and the `_exist` presence pattern.
 
 ## Quick start
 
-### 1. Install prerequisites
+### 1. Install for development
 
 ```bash
-pip install ms-dsc
-pip install -e .          # installs dsc-example-resource in editable mode
-dsc-gen manifest          # generates dsc_example_resource/dsc/*.json
+pip install -e .          # Fetches ms-dsc as a build-time dep; installs dsc-example-resource in editable mode
+dsc-gen manifest          # Generates dsc_example_resource/dsc/*.json
 ```
+
+Note: `ms-dsc` is declared in `[build-system] requires` for schema generation and IDE support during development.
+It is **not** a runtime dependency; DSC provides it at runtime via the bundled copy.
 
 ### 2. Verify resources are visible
 
