@@ -25,6 +25,13 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="TYPE",
         help="Fully-qualified resource type (e.g. MyPackage/MyResource).",
     )
+    parser.add_argument(
+        "--content",
+        dest="adapted_content",
+        default=None,
+        metavar="JSON",
+        help="JSON object from the adapted resource manifest's 'content' field (injected by DSC via adaptedContentArg).",
+    )
     return parser
 
 
@@ -57,10 +64,19 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": "--resource is required for this operation"}), file=sys.stderr)
         return 2
 
+    # Parse the optional adapted content JSON injected by DSC via adaptedContentArg.
+    adapted_content: dict | None = None
+    if args.adapted_content:
+        try:
+            adapted_content = json.loads(args.adapted_content)
+        except json.JSONDecodeError as exc:
+            print(json.dumps({"error": f"Invalid --content JSON: {exc}"}), file=sys.stderr)
+            return 2
+
     stdin_json = sys.stdin.read()
 
     from pyadapter.router import dispatch
-    return dispatch(args.operation, args.resource_type, stdin_json)
+    return dispatch(args.operation, args.resource_type, stdin_json, adapted_content)
 
 
 if __name__ == "__main__":

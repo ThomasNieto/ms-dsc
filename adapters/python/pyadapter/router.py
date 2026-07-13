@@ -17,6 +17,7 @@ stdout contract (single-config mode):
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import importlib.metadata
 import json
 import logging
@@ -27,9 +28,9 @@ from typing import Any
 _logger = logging.getLogger(__name__)
 
 
-def dispatch(operation: str, resource_type: str, stdin_json: str) -> int:
+def dispatch(operation: str, resource_type: str, stdin_json: str, adapted_content: dict | None = None) -> int:
     try:
-        cls = _resolve_class(resource_type)
+        cls = _resolve_class(resource_type, adapted_content)
     except (ValueError, RuntimeError) as exc:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 2
@@ -73,10 +74,28 @@ def dispatch(operation: str, resource_type: str, stdin_json: str) -> int:
         return 1
 
 
-def _resolve_class(resource_type: str) -> type:
+def _resolve_class(resource_type: str, adapted_content: dict | None = None) -> type:
     if not resource_type:
         raise ValueError("--resource is required")
 
+    # Primary path: use module + class from the adapted resource manifest's content
+    # field, injected by DSC via adaptedContentArg.  This works for both pre-built
+    # manifests (installed packages) and bundled resources (not pip-installed).
+    if adapted_content:
+        module_name = adapted_content.get("module")
+        class_name = adapted_content.get("class")
+        if module_name and class_name:
+            try:
+                mod = importlib.import_module(module_name)
+                cls = getattr(mod, class_name)
+                _logger.debug("Resolved %s via content: %s.%s", resource_type, module_name, class_name)
+                return cls
+            except Exception as exc:
+                _logger.debug("Content-based resolution failed for %s (%s.%s): %s; falling back to entry points",
+                              resource_type, module_name, class_name, exc)
+
+    # Fallback path: entry_points (pip-installed resources without pre-built manifests,
+    # or manual invocation outside of DSC where no --content is injected).
     type_lower = resource_type.casefold()
     try:
         eps = importlib.metadata.entry_points(group="microsoft.dsc.resources")
@@ -85,13 +104,14 @@ def _resolve_class(resource_type: str) -> type:
 
     for ep in eps:
         if ep.name.casefold() == type_lower:
-            _logger.debug("Resolved %s → %s", resource_type, getattr(ep, "value", "?"))
+            _logger.debug("Resolved %s via entry point: %s", resource_type, getattr(ep, "value", "?"))
             return ep.load()
 
     raise ValueError(
         f"Resource type '{resource_type}' not found. "
         "Ensure the package is installed and registers a "
-        "'microsoft.dsc.resources' entry point."
+        "'microsoft.dsc.resources' entry point, or that the "
+        "adapted resource manifest includes 'content.module' and 'content.class'."
     )
 
 

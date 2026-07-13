@@ -1,16 +1,19 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 """
-Disk cache for the Python DSC adapter and discovery extension.
+Disk cache for the Python DSC adapter.
 
-Both the adapter (list) and the extension (discover) use the same cache format:
-a JSON file keyed by a fingerprint of all installed distribution name==version
-pairs.  When the fingerprint matches and every cached path still exists on disk,
-the cached entries are used directly; otherwise the cache is regenerated.
+The adapter (list) uses this cache format: a JSON file keyed by a fingerprint
+of all installed distribution name==version pairs.  When the fingerprint matches
+and every cached path still exists on disk, the cached entries are used directly;
+otherwise the cache is regenerated.
 
-Cache locations:
-    Windows : %LocalAppData%\\dsc\\Python<Name>Cache.json
-    Others  : ~/.dsc/Python<Name>Cache.json
+Cache location:
+    Windows : %LocalAppData%\\dsc\\PythonListCache.json
+    Others  : ~/.dsc/PythonListCache.json
+
+The discovery extension (extensions/python/python.discover.py) no longer uses
+a cache; importlib.resources lookup is fast enough at startup.
 """
 from __future__ import annotations
 
@@ -82,5 +85,4 @@ class DscCache:
         _logger.debug("Cache cleared: %s", self._path.name)
 
 
-DISCOVER_CACHE = DscCache("PythonDiscoverCache.json")
 LIST_CACHE = DscCache("PythonListCache.json")

@@ -84,6 +84,11 @@ _MOCK_EPS = [
 
 @pytest.fixture(autouse=True)
 def mock_eps():
+    """Default entry_points fixture — returns the two test resources.
+
+    Tests in TestResolveClass that need to control entry_points explicitly
+    override this via their own patch.object calls.
+    """
     with patch.object(importlib.metadata, "entry_points", return_value=_MOCK_EPS):
         yield
 
@@ -371,4 +376,72 @@ class TestRouterStdlibOnly:
 
         lines = [l for l in cap.getvalue().splitlines() if l.strip()]
         assert len(lines) == 1
+
+
+# ---------------------------------------------------------------------------
+# Content-based class resolution (_resolve_class)
+# ---------------------------------------------------------------------------
+
+class TestResolveClass:
+    def test_content_takes_priority_over_entry_points(self):
+        """When adapted_content has module+class, it is used before entry_points."""
+        from pyadapter.router import _resolve_class
+
+        content = {
+            "module": "unit.test_router",
+            "class": "StateDiffResource",
+        }
+        # Entry points mock returns nothing to prove content path is taken.
+        with patch.object(importlib.metadata, "entry_points", return_value=[]):
+            cls = _resolve_class("Any/Type", adapted_content=content)
+
+        assert cls is StateDiffResource
+
+    def test_content_fallback_to_entry_points_on_import_error(self):
+        """If content-based import fails, entry_points are tried next."""
+        from pyadapter.router import _resolve_class
+
+        content = {"module": "nonexistent.module", "class": "Cls"}
+        ep = _make_ep("Test/StateDiff", StateDiffResource)
+        with patch.object(importlib.metadata, "entry_points", return_value=[ep]):
+            cls = _resolve_class("Test/StateDiff", adapted_content=content)
+
+        assert cls is StateDiffResource
+
+    def test_no_content_uses_entry_points(self):
+        """Without adapted_content, entry_points are used directly."""
+        from pyadapter.router import _resolve_class
+
+        ep = _make_ep("Test/StateDiff", StateDiffResource)
+        with patch.object(importlib.metadata, "entry_points", return_value=[ep]):
+            cls = _resolve_class("Test/StateDiff", adapted_content=None)
+
+        assert cls is StateDiffResource
+
+    def test_content_missing_module_falls_back_to_entry_points(self):
+        """Content without 'module' key skips content path and uses entry_points."""
+        from pyadapter.router import _resolve_class
+
+        content = {"class": "StateDiffResource"}  # no 'module'
+        ep = _make_ep("Test/StateDiff", StateDiffResource)
+        with patch.object(importlib.metadata, "entry_points", return_value=[ep]):
+            cls = _resolve_class("Test/StateDiff", adapted_content=content)
+
+        assert cls is StateDiffResource
+
+    def test_dispatch_passes_content_to_resolve(self):
+        """dispatch() passes adapted_content through to _resolve_class."""
+        import io
+        from pyadapter.router import dispatch
+
+        content = {
+            "module": "unit.test_router",
+            "class": "StateDiffResource",
+        }
+        with patch.object(importlib.metadata, "entry_points", return_value=[]):
+            cap = io.StringIO()
+            with patch("sys.stdout", cap):
+                rc = dispatch("get", "Any/Type", '{"name":"x"}', adapted_content=content)
+
+        assert rc == 0
 

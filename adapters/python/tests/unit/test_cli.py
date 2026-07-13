@@ -166,3 +166,68 @@ class TestDscGenMainCommand:
         main(["manifest", "--out", str(out_dir), "--pyproject", str(pyproject)])
         assert (out_dir / "Cli.GetOnly.dsc.adaptedResource.json").exists()
 
+
+# ---------------------------------------------------------------------------
+# Tests for pyadapter CLI --content argument
+# ---------------------------------------------------------------------------
+
+class TestPyadapterCliContent:
+    """Verify that --content JSON is parsed and forwarded to dispatch."""
+
+    def _run(self, argv: list[str], stdin: str = "{}") -> int:
+        import io
+        from unittest.mock import patch
+        from pyadapter.cli import main
+
+        with patch("sys.stdin", io.StringIO(stdin)):
+            with patch("sys.stdout", io.StringIO()):
+                with patch("sys.stderr", io.StringIO()):
+                    return main(argv)
+
+    def test_content_forwarded_to_dispatch(self):
+        """--content JSON is parsed and passed to router.dispatch as adapted_content."""
+        import json
+        from unittest.mock import patch, call
+        from pyadapter.cli import main
+        import io
+
+        content = {"module": "unit.test_router", "class": "StateDiffResource"}
+        content_json = json.dumps(content)
+
+        captured = {}
+
+        def fake_dispatch(operation, resource_type, stdin_json, adapted_content=None):
+            captured["adapted_content"] = adapted_content
+            return 0
+
+        with patch("pyadapter.router.dispatch", fake_dispatch):
+            with patch("sys.stdin", io.StringIO("{}")):
+                with patch("sys.stdout", io.StringIO()):
+                    main(["get", "--resource", "Any/Type", "--content", content_json])
+
+        assert captured["adapted_content"] == content
+
+    def test_invalid_content_json_returns_2(self):
+        """Malformed --content JSON causes exit code 2."""
+        rc = self._run(["get", "--resource", "Any/Type", "--content", "{not valid json}"])
+        assert rc == 2
+
+    def test_no_content_arg_passes_none(self):
+        """When --content is omitted, adapted_content=None is passed to dispatch."""
+        from unittest.mock import patch
+        import io
+
+        captured = {}
+
+        def fake_dispatch(operation, resource_type, stdin_json, adapted_content=None):
+            captured["adapted_content"] = adapted_content
+            return 0
+
+        with patch("pyadapter.router.dispatch", fake_dispatch):
+            with patch("sys.stdin", io.StringIO("{}")):
+                with patch("sys.stdout", io.StringIO()):
+                    from pyadapter.cli import main
+                    main(["get", "--resource", "Any/Type"])
+
+        assert captured["adapted_content"] is None
+

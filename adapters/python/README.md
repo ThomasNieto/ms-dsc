@@ -123,14 +123,11 @@ Requirements for integration tests:
 DSC discovers Python resources through two mechanisms:
 
 1. **Discovery extension** (`Microsoft.Python/Discover`)  
-   Scans installed Python distributions for `*.dsc.adaptedResource.json` data
-   files. Handles both regular (`pip install`) and editable (`pip install -e`)
-   installs. Results are cached in `~/.dsc/PythonDiscoverCache.json`.
-
-2. **Adapter list** (`Microsoft.Adapter/Python` → `adapter.list`)  
-   Fallback for packages without pre-built manifests. Enumerates
-   `importlib.metadata.entry_points(group="microsoft.dsc.resources")` and
-   generates manifests at runtime. Results are cached in
+   Uses `importlib.resources` to locate `<package_name>/dsc/*.dsc.adaptedResource.json`
+   files inside installed distributions. Works correctly across regular wheels, editable
+   installs, and bundled (non-pip-installed) resources whose manifests are found directly
+   by DSC's own bin-directory scan. No caching is performed; `importlib.resources` lookup
+   is fast enough at startup.
    `~/.dsc/PythonListCache.json`.
 
 ## Writing a Python DSC resource
@@ -214,10 +211,13 @@ rationale, component overview, discovery pipeline, and open questions.
 
 | Platform | Path |
 |----------|------|
-| Windows | `%LOCALAPPDATA%\.dsc\PythonDiscoverCache.json` |
-| Linux/macOS | `~/.dsc/PythonDiscoverCache.json` |
+| Windows | `%LOCALAPPDATA%\.dsc\PythonListCache.json` |
+| Linux/macOS | `~/.dsc/PythonListCache.json` |
 
-To clear the cache:
+The discovery cache (`PythonDiscoverCache.json`) has been removed. The
+`importlib.resources`-based lookup is fast enough that caching is unnecessary.
+
+To clear the list cache:
 ```bash
 python -m pyadapter.cli clear-cache
 ```
