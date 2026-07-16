@@ -128,6 +128,18 @@ def _capabilities_for(cls: type) -> list[str]:
     return caps
 
 
+def _source_path_for(cls: type) -> str:
+    """Resolve the source file path for a resource class."""
+    try:
+        import importlib.util as _ilu
+        spec = _ilu.find_spec(cls.__module__)
+        if spec and spec.origin:
+            return spec.origin
+    except Exception:
+        pass
+    return f"{cls.__module__}:{cls.__qualname__}"
+
+
 def _build_list_entry(type_name: str, cls: type) -> dict:
     """Generate a DSC adapter list entry from a resource class."""
     metadata = getattr(cls, "__dsc_metadata__", None)
@@ -136,12 +148,22 @@ def _build_list_entry(type_name: str, cls: type) -> dict:
     description = metadata.description if metadata else ""
     capabilities = _capabilities_for(cls)
 
+    # DscResource requires path + directory (non-optional).
+    # adaptedContent is set so DSC injects module+class into the adapter call
+    # via --content, enabling direct class resolution without entry-point fallback.
+    src_path = _source_path_for(cls)
     entry: dict = {
         "type": type_name,
         "kind": "resource",
         "version": version,
         "capabilities": capabilities,
         "requireAdapter": _ADAPTER_TYPE,
+        "path": src_path,
+        "directory": str(Path(src_path).parent),
+        "adaptedContent": {
+            "module": cls.__module__,
+            "class": cls.__name__,
+        },
     }
     if description:
         entry["description"] = description
@@ -195,6 +217,14 @@ def cmd_list() -> int:
     Emit list entries for resources NOT covered by pre-built manifests.
     Results are cached; cache is invalidated when the installed package set changes.
     """
+    # Ensure ms_dsc is available in sys.modules before loading resource entry points.
+    # This allows resources to import ms_dsc without declaring it as a dependency,
+    # since pyadapter loads it from the bundled location (sys.path[0] = CWD).
+    try:
+        import ms_dsc  # noqa: F401
+    except ImportError:
+        _logger.debug("ms-dsc not available in bundled location or pip; resources must declare it as a dependency")
+
     fingerprint = dist_fingerprint()
     entries = LIST_CACHE.load(fingerprint)
     if entries is None:

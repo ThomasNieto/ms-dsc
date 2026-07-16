@@ -146,17 +146,9 @@ def _generate_manifest(resource_type: str, cls: type) -> dict:
         except Exception as exc:
             print(f"  warning: schema generation failed for {resource_type}: {exc}", file=sys.stderr)
 
-    # path is required by DSC's AdaptedPathOrContent schema — must be a real file.
-    # Resolve the module's source file so DSC can verify it exists.
-    _path: str = f"{cls.__module__}:{cls.__qualname__}"  # fallback
-    try:
-        import importlib.util as _ilu
-        _spec = _ilu.find_spec(cls.__module__)
-        if _spec and _spec.origin:
-            _path = _spec.origin
-    except Exception:
-        pass
-
+    # Use AdaptedPathOrContent::Content so DSC injects module+class into the
+    # adapter call as --content, enabling direct class resolution without a
+    # Python entry-point fallback.
     manifest: dict = {
         "$schema": "https://aka.ms/dsc/schemas/v3/bundled/adaptedresource/manifest.json",
         "type": resource_type,
@@ -164,7 +156,10 @@ def _generate_manifest(resource_type: str, cls: type) -> dict:
         "version": version,
         "capabilities": capabilities,
         "requireAdapter": "Microsoft.Adapter/Python",
-        "path": _path,
+        "content": {
+            "module": cls.__module__,
+            "class": cls.__name__,
+        },
     }
     if description:
         manifest["description"] = description

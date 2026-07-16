@@ -143,10 +143,27 @@ the bundled version automatically.  If a user has a different version installed
 via pip, the bundled version takes precedence (CWD precedes site-packages in
 `sys.path`).
 
-**Version compatibility** — the bundled ms_dsc version is recorded in the DSC
-release notes.  Resource packages should declare `ms-dsc >= X.Y.Z, < (X+1).0.0`
-in their dependencies.  Breaking API changes require a MAJOR version bump in
-ms-dsc.
+**Plugin pattern — resource dependencies** — Because DSC pre-loads bundled ms_dsc
+before discovering resources, resource packages do NOT declare `ms-dsc` as a
+runtime dependency.  Instead, `ms-dsc` is declared only in `[build-system] requires`
+for schema generation, decorators, and IDE support:
+
+```toml
+[build-system]
+requires = ["hatchling", "ms-dsc"]  # Build-time only
+
+[project]
+dependencies = []                    # Runtime: empty (ms-dsc provided by DSC)
+```
+
+This follows the plugin pattern used by pytest, Flask, and Jupyter: the framework
+provides the SDK at runtime, and plugins don't declare it as a dependency.  Resources
+can be safely installed outside DSC without forcing users to install the DSC SDK.
+
+**Version compatibility** — The bundled ms_dsc version is recorded in the DSC
+release notes.  Resource authors should ensure their code is compatible with the
+bundled ms_dsc version shipped with DSC.  Breaking API changes require a MAJOR
+version bump in ms-dsc and corresponding DSC release notes.
 
 ### Discovery pipeline
 
@@ -166,6 +183,26 @@ DSC engine startup
             • Returns list entries for resources WITHOUT pre-built manifests
             • Results cached in ~/.dsc/PythonListCache.json
 ```
+
+### Pre-loading ms_dsc for the plugin pattern
+
+To enable the plugin pattern (resources without ms-dsc runtime dependencies), the
+adapter must pre-load ms_dsc before discovering and loading resource entry points.
+
+When the adapter's `list` command runs (`python -m pyadapter.cli list`):
+
+1. The adapter immediately executes `import ms_dsc` (catching ImportError if the
+   bundled copy is unavailable, which only occurs in non-DSC contexts).
+2. This populates `sys.modules['ms_dsc']`, making it available to all subsequently
+   loaded resource modules.
+3. Only then does the adapter enumerate `importlib.metadata.entry_points(group="microsoft.dsc.resources")`
+   and load resource entry points via `ep.load()`.
+4. Each resource module (e.g., `from ms_dsc import DscResource, SetResult`)
+   imports from the already-populated `sys.modules['ms_dsc']` without declaring
+   a runtime dependency.
+
+This early import ensures that resource classes can use `from ms_dsc import ...`
+at module load time, even though `ms-dsc` is not in their `dependencies`.
 
 ### Operation dispatch (content-based resolution)
 

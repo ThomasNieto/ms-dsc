@@ -29,6 +29,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--content",
         dest="adapted_content",
         default=None,
+        nargs="?",
+        const=None,
         metavar="JSON",
         help="JSON object from the adapted resource manifest's 'content' field (injected by DSC via adaptedContentArg).",
     )
