@@ -170,7 +170,7 @@ def _do_set(resource: Any, instance: Any, metadata: Any) -> int:
     result = resource.set(instance)
     print(json.dumps(_to_dict(result.actual_state)))
 
-    # Use .value attribute so we never import from ms_dsc — adapter is stdlib-only.
+    # Check SetReturn metadata to determine output format
     set_return = getattr(getattr(metadata, "set_return", None), "value", "state") if metadata is not None else "state"
     if set_return == "stateAndDiff":
         print(json.dumps(result.changed_properties or []))
@@ -181,7 +181,7 @@ def _do_test(resource: Any, instance: Any, metadata: Any) -> int:
     result = resource.test(instance)
     print(json.dumps(_to_dict(result.actual_state)))
 
-    # Use .value attribute so we never import from ms_dsc — adapter is stdlib-only.
+    # Check TestReturn metadata to determine output format
     test_return = getattr(getattr(metadata, "test_return", None), "value", "state") if metadata is not None else "state"
     if test_return == "stateAndDiff":
         print(json.dumps(result.differing_properties or []))

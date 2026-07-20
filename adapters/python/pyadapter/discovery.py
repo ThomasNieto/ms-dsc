@@ -24,6 +24,8 @@ import json
 import logging
 from pathlib import Path
 
+from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
+
 from pyadapter.cache import LIST_CACHE, dist_fingerprint
 
 _logger = logging.getLogger(__name__)
@@ -105,26 +107,17 @@ def _covered_types() -> set[str]:
 def _capabilities_for(cls: type) -> list[str]:
     """Determine DSC capabilities by checking Protocol membership."""
     caps: list[str] = []
-    try:
-        from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
-
-        probe = object.__new__(cls)
-        if isinstance(probe, Gettable):
-            caps.append("get")
-        if isinstance(probe, Settable):
-            caps.append("set")
-        if isinstance(probe, Testable):
-            caps.append("test")
-        if isinstance(probe, Deletable):
-            caps.append("delete")
-        if isinstance(probe, Exportable):
-            caps.append("export")
-    except ImportError:
-        _logger.debug("ms-dsc not available; falling back to hasattr capability detection")
-        probe = object.__new__(cls)
-        for cap in ("get", "set", "test", "delete", "export"):
-            if callable(getattr(probe, cap, None)):
-                caps.append(cap)
+    probe = object.__new__(cls)
+    if isinstance(probe, Gettable):
+        caps.append("get")
+    if isinstance(probe, Settable):
+        caps.append("set")
+    if isinstance(probe, Testable):
+        caps.append("test")
+    if isinstance(probe, Deletable):
+        caps.append("delete")
+    if isinstance(probe, Exportable):
+        caps.append("export")
     return caps
 
 
@@ -217,14 +210,6 @@ def cmd_list() -> int:
     Emit list entries for resources NOT covered by pre-built manifests.
     Results are cached; cache is invalidated when the installed package set changes.
     """
-    # Ensure ms_dsc is available in sys.modules before loading resource entry points.
-    # This allows resources to import ms_dsc without declaring it as a dependency,
-    # since pyadapter loads it from the bundled location (sys.path[0] = CWD).
-    try:
-        import ms_dsc  # noqa: F401
-    except ImportError:
-        _logger.debug("ms-dsc not available in bundled location or pip; resources must declare it as a dependency")
-
     fingerprint = dist_fingerprint()
     entries = LIST_CACHE.load(fingerprint)
     if entries is None:

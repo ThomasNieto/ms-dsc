@@ -47,7 +47,7 @@ adapters/python/
 │   ├── router.py                # Operation dispatch (get/set/test/delete/export)
 │   ├── discovery.py             # list + discover commands
 │   ├── cache.py                 # Fingerprint-keyed disk cache
-│   ├── schema.py                # Standalone dataclass → JSON Schema generator
+│   ├── schema.py                # JSON Schema generation (delegates to ms_dsc.schema)
 │   └── logging.py               # DscLogHandler → DSC JSON stderr
 ├── ms-dsc/                      # SDK — published to PyPI, installed by resource authors
 │   ├── ms_dsc/
@@ -78,15 +78,14 @@ extensions/python/
 
 | Layer | Dependency | Purpose |
 |-------|------------|---------|
-| `pyadapter` | **stdlib only** | Invoked by DSC engine per operation |
+| `pyadapter` | **ms-dsc** (bundled) | Invoked by DSC engine per operation |
 | `ms-dsc` SDK | **zero mandatory runtime deps** | Used by resource authors |
 | `Microsoft.Python/Discover` | **stdlib only** | Scans distributions at DSC startup |
 
-The adapter runtime (`pyadapter`) intentionally has **no `ms-dsc` dependency**.
-It reads resource metadata and result objects purely via attribute access and duck
-typing.  This means resources that do not use the SDK (raw protocol implementations)
-are fully supported, and the adapter functions even if `ms-dsc` is not installed
-(though the resource classes themselves usually depend on it).
+The adapter runtime (`pyadapter`) requires the bundled `ms-dsc` SDK, which ships
+alongside it in the DSC package. This simplifies the adapter code (no defensive
+fallback patterns) and guarantees access to protocol introspection for capability
+detection.
 
 ### Adapter invocation — module vs script
 
