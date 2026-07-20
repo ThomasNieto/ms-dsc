@@ -28,6 +28,7 @@ from pathlib import Path
 
 from ms_dsc import DscResource, SetResult, TestResult, dsc_resource
 from ms_dsc.metadata import SetReturn, TestReturn
+from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
 from ms_dsc.schema import DataclassSchemaProvider
 
 _logger = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ class FileSchema:
     set_return=SetReturn.STATE_AND_DIFF,
     test_return=TestReturn.STATE_AND_DIFF,
 )
-class FileResource(DscResource[FileSchema]):
+class FileResource(DscResource[FileSchema], Gettable, Settable, Testable, Deletable, Exportable):
     """
     Manages a single file on disk.
 

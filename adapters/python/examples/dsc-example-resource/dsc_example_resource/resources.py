@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ms_dsc import DscResource, SetResult, TestResult, dsc_resource
 from ms_dsc.metadata import SetReturn, TestReturn
+from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
 from ms_dsc.schema import DataclassSchemaProvider
 
 _logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class GreetingSchema:
     description="Returns a greeting message for the given name. Read-only.",
     tags=["example", "read-only"],
 )
-class GreetingResource(DscResource[GreetingSchema]):
+class GreetingResource(DscResource[GreetingSchema], Gettable):
     """
     Read-only resource — implements only get().
 
@@ -56,7 +57,7 @@ class GreetingResource(DscResource[GreetingSchema]):
     no persistent state, get() simply computes the greeting and returns it.
 
     Illustrates: minimal resource, get() only, no side effects.
-    """
+    """}
 
     schema_provider = DataclassSchemaProvider(GreetingSchema)
 
@@ -106,7 +107,7 @@ class CounterSchema:
     set_return=SetReturn.STATE_AND_DIFF,
     test_return=TestReturn.STATE_AND_DIFF,
 )
-class CounterResource(DscResource[CounterSchema]):
+class CounterResource(DscResource[CounterSchema], Gettable, Settable, Testable, Deletable, Exportable):
     """
     Read/write resource with STATE_AND_DIFF.
 
@@ -189,7 +190,7 @@ class EnvVarSchema:
     set_return=SetReturn.STATE_AND_DIFF,
     test_return=TestReturn.STATE_AND_DIFF,
 )
-class EnvVarResource(DscResource[EnvVarSchema]):
+class EnvVarResource(DscResource[EnvVarSchema], Gettable, Settable, Testable, Deletable, Exportable):
     """
     Manages environment variables in the current process scope.
 

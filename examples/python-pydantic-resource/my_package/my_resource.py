@@ -20,6 +20,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field, field_validator
 from ms_dsc import DscResource, SetResult, TestResult, dsc_resource
 from ms_dsc.metadata import SetReturn, TestReturn
+from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
 from ms_dsc.schema import PydanticSchemaProvider
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class MySchema(BaseModel):
     set_return=SetReturn.STATE_AND_DIFF,
     test_return=TestReturn.STATE_AND_DIFF,
 )
-class MyResource(DscResource[MySchema]):
+class MyResource(DscResource[MySchema], Gettable, Settable, Testable, Deletable, Exportable):
     schema_provider = PydanticSchemaProvider(MySchema)
 
     def get(self, instance: MySchema) -> MySchema:
