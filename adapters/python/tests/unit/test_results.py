@@ -55,6 +55,7 @@ class TestTestResult:
     def test_in_desired_state_when_empty_list(self):
         r = TestResult(actual_state=Schema(name="bar"), differing_properties=[])
         assert r.differing_properties == []
+        assert r.differing_properties is not None
         assert len(r.differing_properties) == 0
 
     def test_generic_type_preserved(self):

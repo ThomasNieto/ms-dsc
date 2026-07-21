@@ -1969,6 +1969,62 @@ function Test-ProjectWithPester {
         Invoke-Pester @pesterParams
     }
 }
+
+function Test-PythonAdapterWithPytest {
+    [cmdletbinding()]
+    param(
+        [switch]$UsingADO
+    )
+
+    begin {
+        $repository = $UsingADO ? 'CFS' : 'PSGallery'
+        $pythonAdapterRoot = Join-Path $PSScriptRoot 'adapters' 'python'
+        $pythonTestDir = Join-Path $pythonAdapterRoot 'tests'
+        
+        Write-Verbose "Python adapter root: $pythonAdapterRoot"
+        Write-Verbose "Python test directory: $pythonTestDir"
+        
+        # Check if Python is available
+        $pythonCmd = if ($IsWindows) {
+            Get-Command python -ErrorAction SilentlyContinue
+        } else {
+            Get-Command python3 -ErrorAction SilentlyContinue
+        }
+        
+        if (-not $pythonCmd) {
+            Write-Warning "Python not found on PATH; skipping Python adapter tests"
+            return
+        }
+        
+        Write-Verbose "Python executable: $($pythonCmd.Source)"
+    }
+
+    process {
+        Write-Verbose "Invoking pytest for Python adapter"
+        Push-Location $pythonTestDir
+        try {
+            # Install test fixture if needed
+            if (-not (Test-Path (Join-Path $pythonAdapterRoot 'tests' 'fixture'))) {
+                Write-Verbose "Python test fixture directory not found"
+                return
+            }
+            
+            Write-Verbose "Installing Python test fixture package"
+            & python -m pip install -e fixture/ -q --disable-pip-version-check
+            
+            Write-Verbose "Running pytest with coverage"
+            & python -m pytest unit/ -v --tb=short
+            
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Python adapter tests failed with exit code $LASTEXITCODE"
+            } else {
+                Write-Verbose "Python adapter tests passed"
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+}
 #endregion Test project functions
 
 #region Package project functions

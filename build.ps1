@@ -300,6 +300,12 @@ process {
             Write-BuildProgress @progressParams -Status "Invoking pester"
             Test-ProjectWithPester @pesterParams @VerboseParam
         }
+        
+        Write-BuildProgress @progressParams -Status "Testing Python adapter with pytest"
+        $pythonTestParams = @{
+            UsingADO = $usingADO
+        }
+        Test-PythonAdapterWithPytest @pythonTestParams @VerboseParam
     }
 
     if (-not [string]::IsNullOrEmpty($PackageType)) {

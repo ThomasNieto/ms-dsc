@@ -301,6 +301,324 @@ class TestCmdClearCache:
         assert rc == 0
 
 
+# ---------------------------------------------------------------------------
+# Additional tests for edge cases and error handling
+# ---------------------------------------------------------------------------
+
+class TestCapabilitiesFor:
+    """Test _capabilities_for protocol detection."""
+
+    def test_gettable_only(self):
+        """Detect Gettable capability."""
+        from ms_dsc.protocols import Gettable
+
+        class GetableResource(Gettable):
+            def get(self, instance):
+                return instance
+
+        from pyadapter.discovery import _capabilities_for
+        caps = _capabilities_for(GetableResource)
+        assert "get" in caps
+
+    def test_settable_only(self):
+        """Detect Settable capability."""
+        from ms_dsc.protocols import Settable
+
+        class SettableResource(Settable):
+            def set(self, instance):
+                pass
+
+        from pyadapter.discovery import _capabilities_for
+        caps = _capabilities_for(SettableResource)
+        assert "set" in caps
+
+    def test_testable_only(self):
+        """Detect Testable capability."""
+        from ms_dsc.protocols import Testable
+
+        class TestableResource(Testable):
+            def test(self, instance):
+                return True
+
+        from pyadapter.discovery import _capabilities_for
+        caps = _capabilities_for(TestableResource)
+        assert "test" in caps
+
+    def test_deletable_only(self):
+        """Detect Deletable capability."""
+        from ms_dsc.protocols import Deletable
+
+        class DeletableResource(Deletable):
+            def delete(self, instance):
+                pass
+
+        from pyadapter.discovery import _capabilities_for
+        caps = _capabilities_for(DeletableResource)
+        assert "delete" in caps
+
+    def test_exportable_only(self):
+        """Detect Exportable capability."""
+        from ms_dsc.protocols import Exportable
+
+        class ExportableResource(Exportable):
+            def export(self):
+                return []
+
+        from pyadapter.discovery import _capabilities_for
+        caps = _capabilities_for(ExportableResource)
+        assert "export" in caps
+
+    def test_all_capabilities(self):
+        """Detect all capabilities when class implements all protocols."""
+        from ms_dsc.protocols import Gettable, Settable, Testable, Deletable, Exportable
+
+        class FullResource(Gettable, Settable, Testable, Deletable, Exportable):
+            def get(self, instance):
+                return instance
+
+            def set(self, instance):
+                pass
+
+            def test(self, instance):
+                return True
+
+            def delete(self, instance):
+                pass
+
+            def export(self):
+                return []
+
+        from pyadapter.discovery import _capabilities_for
+        caps = _capabilities_for(FullResource)
+        assert set(caps) == {"get", "set", "test", "delete", "export"}
+
+    def test_no_capabilities(self):
+        """Class with no protocol implementations returns empty list."""
+        from pyadapter.discovery import _capabilities_for
+
+        class NoCapabilities:
+            pass
+
+        caps = _capabilities_for(NoCapabilities)
+        assert caps == []
+
+
+class TestSourcePathFor:
+    """Test _source_path_for path resolution."""
+
+    def test_valid_module_resolution(self):
+        """Resolve source path for a valid module."""
+        from ms_dsc.protocols import Gettable
+        from pyadapter.discovery import _source_path_for
+
+        source = _source_path_for(Gettable)
+        assert "ms_dsc" in source or "protocols" in source
+
+    def test_fallback_to_module_qualname(self):
+        """Fall back to module:qualname format on error."""
+        from pyadapter.discovery import _source_path_for
+
+        class FakeResource:
+            __module__ = "fake.module"
+            __qualname__ = "FakeResource"
+
+        with patch("importlib.util.find_spec") as mock_find:
+            mock_find.return_value = None
+            source = _source_path_for(FakeResource)
+            assert source == "fake.module:FakeResource"
+
+    def test_spec_with_no_origin(self):
+        """When spec exists but has no origin, use fallback."""
+        from pyadapter.discovery import _source_path_for
+
+        class FakeResource:
+            __module__ = "test.module"
+            __qualname__ = "TestResource"
+
+        mock_spec = MagicMock()
+        mock_spec.origin = None
+
+        with patch("importlib.util.find_spec") as mock_find:
+            mock_find.return_value = mock_spec
+            source = _source_path_for(FakeResource)
+            assert source == "test.module:TestResource"
+
+    def test_exception_in_find_spec(self):
+        """Exception in find_spec falls back gracefully."""
+        from pyadapter.discovery import _source_path_for
+
+        class FakeResource:
+            __module__ = "error.module"
+            __qualname__ = "ErrorResource"
+
+        with patch("importlib.util.find_spec") as mock_find:
+            mock_find.side_effect = RuntimeError("Import error")
+            source = _source_path_for(FakeResource)
+            assert source == "error.module:ErrorResource"
+
+
+class TestManifestsParsing:
+    """Test manifest path discovery and parsing."""
+
+    def test_iter_manifest_paths_returns_list(self):
+        """_iter_manifest_paths returns list even with no distributions."""
+        from pyadapter.discovery import _iter_manifest_paths
+        results = _iter_manifest_paths()
+        assert isinstance(results, list)
+
+    def test_manifests_for_dist_handles_module_not_found(self):
+        """_manifests_for_dist handles ModuleNotFoundError gracefully."""
+        from pyadapter.discovery import _manifests_for_dist
+
+        mock_dist = MagicMock()
+        mock_dist.name = "some-package"
+
+        with patch("pyadapter.discovery.importlib.resources.files") as mock_files:
+            mock_files.side_effect = ModuleNotFoundError("No dsc subpackage")
+            results = _manifests_for_dist(mock_dist)
+            assert results == []
+
+    def test_manifests_for_dist_handles_type_error(self):
+        """_manifests_for_dist handles TypeError from files()."""
+        from pyadapter.discovery import _manifests_for_dist
+
+        mock_dist = MagicMock()
+        mock_dist.name = "invalid-package"
+
+        with patch("pyadapter.discovery.importlib.resources.files") as mock_files:
+            mock_files.side_effect = TypeError("Not a package")
+            results = _manifests_for_dist(mock_dist)
+            assert results == []
+
+    def test_manifests_for_dist_normalizes_package_name(self):
+        """Package name normalization: hyphens and dots become underscores."""
+        from pyadapter.discovery import _manifests_for_dist
+
+        mock_dist = MagicMock()
+        mock_dist.name = "some-package.with-dots"
+
+        with patch("pyadapter.discovery.importlib.resources.files") as mock_files:
+            mock_files.side_effect = ModuleNotFoundError()
+            _manifests_for_dist(mock_dist)
+            # Should have called with normalized name
+            mock_files.assert_called_once()
+            call_arg = mock_files.call_args[0][0]
+            assert "some_package_with_dots" in call_arg
+
+    def test_covered_types_handles_invalid_json(self):
+        """_covered_types handles invalid JSON in manifest gracefully."""
+        from pyadapter.discovery import _covered_types, _iter_manifest_paths
+
+        mock_entry = {"manifestPath": "/fake/path.json"}
+
+        with patch("pyadapter.discovery._iter_manifest_paths") as mock_iter:
+            mock_iter.return_value = [mock_entry]
+
+            with patch("pathlib.Path.read_text") as mock_read:
+                mock_read.return_value = "invalid json {"
+                covered = _covered_types()
+                assert isinstance(covered, set)
+
+    def test_covered_types_extracts_type_names(self):
+        """_covered_types correctly extracts type names from manifests."""
+        from pyadapter.discovery import _covered_types
+
+        valid_manifest = {"type": "Microsoft.Example/Resource"}
+        mock_entry = {"manifestPath": "/fake/manifest.json"}
+
+        with patch("pyadapter.discovery._iter_manifest_paths") as mock_iter:
+            mock_iter.return_value = [mock_entry]
+
+            with patch("pathlib.Path.read_text") as mock_read:
+                mock_read.return_value = json.dumps(valid_manifest)
+                covered = _covered_types()
+                assert "microsoft.example/resource" in covered
+
+    def test_covered_types_case_folding(self):
+        """Type names are case-folded for comparison."""
+        from pyadapter.discovery import _covered_types
+
+        manifest = {"type": "MyType/Resource"}
+        mock_entry = {"manifestPath": "/fake/manifest.json"}
+
+        with patch("pyadapter.discovery._iter_manifest_paths") as mock_iter:
+            mock_iter.return_value = [mock_entry]
+
+            with patch("pathlib.Path.read_text") as mock_read:
+                mock_read.return_value = json.dumps(manifest)
+                covered = _covered_types()
+                assert "mytype/resource" in covered
+
+
+class TestListFromEntryPoints:
+    """Test entry point enumeration."""
+
+    def test_empty_entry_points_returns_empty_list(self):
+        """No entry points returns empty list."""
+        from pyadapter.discovery import _list_from_entry_points
+
+        with patch("pyadapter.discovery.importlib.metadata.entry_points") as mock_ep:
+            mock_ep.return_value = []
+            results = _list_from_entry_points(set())
+            assert results == []
+
+    def test_entry_point_enumeration_failure(self):
+        """Exception during entry point enumeration returns empty list."""
+        from pyadapter.discovery import _list_from_entry_points
+
+        with patch("pyadapter.discovery.importlib.metadata.entry_points") as mock_ep:
+            mock_ep.side_effect = RuntimeError("entry_points failed")
+            results = _list_from_entry_points(set())
+            assert results == []
+
+    def test_covered_resources_are_skipped(self):
+        """Resources already covered by manifests are skipped."""
+        from pyadapter.discovery import _list_from_entry_points
+
+        mock_ep = MagicMock()
+        mock_ep.name = "CoveredResource"
+        mock_ep.load.return_value = MagicMock()
+
+        with patch("pyadapter.discovery.importlib.metadata.entry_points") as mock_eps:
+            mock_eps.return_value = [mock_ep]
+            covered = {"coveredresource"}  # lowercase
+            results = _list_from_entry_points(covered)
+            assert results == []
+            mock_ep.load.assert_not_called()
+
+    def test_entry_point_load_failure_is_handled(self):
+        """Failed entry point loads are handled gracefully."""
+        from pyadapter.discovery import _list_from_entry_points
+
+        mock_ep = MagicMock()
+        mock_ep.name = "FailedResource"
+        mock_ep.load.side_effect = ImportError("Module not found")
+
+        with patch("pyadapter.discovery.importlib.metadata.entry_points") as mock_eps:
+            mock_eps.return_value = [mock_ep]
+            results = _list_from_entry_points(set())
+            assert results == []  # Failed loads produce no entry
+
+    def test_successful_entry_point_included(self):
+        """Successfully loaded entry points are included."""
+        from ms_dsc.protocols import Gettable
+        from pyadapter.discovery import _list_from_entry_points
+
+        class ValidResource(Gettable):
+            def get(self, instance):
+                return instance
+
+        mock_ep = MagicMock()
+        mock_ep.name = "ValidResource"
+        mock_ep.load.return_value = ValidResource
+
+        with patch("pyadapter.discovery.importlib.metadata.entry_points") as mock_eps:
+            mock_eps.return_value = [mock_ep]
+            results = _list_from_entry_points(set())
+            assert len(results) == 1
+            assert results[0]["type"] == "ValidResource"
+
+
 
 # ---------------------------------------------------------------------------
 # Test resource classes

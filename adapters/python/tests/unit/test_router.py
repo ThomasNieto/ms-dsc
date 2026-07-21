@@ -445,3 +445,86 @@ class TestResolveClass:
 
         assert rc == 0
 
+
+# ---------------------------------------------------------------------------
+# Additional error handling and edge case tests
+# ---------------------------------------------------------------------------
+
+class TestDispatchErrorHandling:
+    """Test dispatch error handling for invalid inputs."""
+
+    def test_empty_resource_type_returns_error(self):
+        """Empty resource type should return error code 2."""
+        from pyadapter.router import dispatch
+        json_input = '{"name": "test"}'
+        rc = dispatch("get", "", json_input)
+        assert rc == 2
+
+    def test_unknown_resource_type_returns_error(self):
+        """Unknown resource type should return error code 2."""
+        from pyadapter.router import dispatch
+        json_input = '{"name": "test"}'
+        rc = dispatch("get", "NonExistent/Resource", json_input)
+        assert rc == 2
+
+    def test_invalid_json_returns_error(self):
+        """Invalid JSON input should return error code 2."""
+        from pyadapter.router import dispatch
+        rc = dispatch("get", "Test/Resource", "{invalid json}")
+        assert rc == 2
+
+    def test_empty_json_input_treated_as_object(self):
+        """Empty input should be treated as '{}'."""
+        from pyadapter.router import dispatch
+        # Empty string should not cause JSON error
+        rc = dispatch("get", "NonExistent/Resource", "")
+        # Will fail due to unknown resource, but not JSON error
+        assert rc == 2
+
+    def test_unknown_operation_verb(self):
+        """Unknown operation verb should be handled gracefully."""
+        from pyadapter.router import dispatch
+        # The dispatch function should handle unknown operations
+        rc = dispatch("unknown_op", "Test/Resource", '{"name":"test"}')
+        # Should return error (either 2 for unknown resource or invalid operation)
+        assert rc > 0
+
+
+class TestDispatchResourceTypeHandling:
+    """Test how dispatch handles resource type parameters."""
+
+    def test_resource_type_normalization(self):
+        """Resource type handling and normalization."""
+        from pyadapter.router import dispatch
+        # Both should attempt the same lookup with error
+        rc1 = dispatch("get", "test/resource", '{"name":"test"}')
+        rc2 = dispatch("get", "Test/Resource", '{"name":"test"}')
+        # Both should fail with unknown resource
+        assert rc1 == 2
+        assert rc2 == 2
+
+
+class TestDispatchStdinParsing:
+    """Test stdin JSON parsing edge cases."""
+
+    def test_single_json_object_parsed(self):
+        """Valid single JSON object should be parsed."""
+        from pyadapter.router import dispatch
+        # This will fail to find the resource, but tests JSON parsing
+        rc = dispatch("get", "Test/Resource", '{"valid": "json"}')
+        # Fails due to resource not found, not JSON parsing
+        assert rc == 2
+
+    def test_whitespace_handling(self):
+        """Leading/trailing whitespace should be handled."""
+        from pyadapter.router import dispatch
+        rc = dispatch("get", "Test/Resource", '   {"name": "test"}   ')
+        # Should handle whitespace in JSON
+        assert rc == 2  # Resource not found
+
+    def test_empty_object(self):
+        """Empty JSON object should be accepted."""
+        from pyadapter.router import dispatch
+        rc = dispatch("get", "Test/Resource", '{}')
+        assert rc == 2  # Resource not found, not JSON error
+

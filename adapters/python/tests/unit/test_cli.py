@@ -234,3 +234,74 @@ class TestPyadapterCliContent:
 
         assert captured["adapted_content"] is None
 
+
+# ---------------------------------------------------------------------------
+# Additional CLI error handling and edge cases
+# ---------------------------------------------------------------------------
+
+class TestCliValidateCommand:
+    """Test the validate command."""
+
+    def test_validate_returns_zero(self, capsys):
+        """validate verb should exit with 0."""
+        from pyadapter.cli import main
+        result = main(["validate"])
+        assert result == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data.get("valid") is True
+
+    def test_validate_output_is_json(self, capsys):
+        """validate output should be valid JSON."""
+        from pyadapter.cli import main
+        main(["validate"])
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert isinstance(data, dict)
+        assert "valid" in data
+
+
+class TestCliListCommand:
+    """Test the list command."""
+
+    def test_list_verb_returns_code(self):
+        """list command should return exit code."""
+        from pyadapter.cli import main
+        result = main(["list"])
+        # list may return 0 or 1 depending on available resources
+        assert result in (0, 1)
+
+
+class TestCliHelpCommand:
+    """Test help functionality."""
+
+    def test_help_exits(self):
+        """--help should trigger SystemExit with code 0."""
+        from pyadapter.cli import main
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--help"])
+        assert exc_info.value.code == 0
+
+
+class TestCliErrorHandling:
+    """Test CLI error handling."""
+
+    def test_no_arguments_raises_exit(self):
+        """No arguments should raise SystemExit."""
+        from pyadapter.cli import main
+        with pytest.raises(SystemExit):
+            main([])
+
+    def test_invalid_verb_raises_exit(self):
+        """Unknown verb should raise SystemExit."""
+        from pyadapter.cli import main
+        with pytest.raises(SystemExit):
+            main(["invalid_verb_xyz"])
+
+    def test_help_is_available(self):
+        """Help should be available and exit cleanly."""
+        from pyadapter.cli import main
+        with pytest.raises(SystemExit) as exc_info:
+            main(["-h"])
+        assert exc_info.value.code == 0
+
