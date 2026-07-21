@@ -104,11 +104,14 @@ class TestDscGenManifest:
         assert "schema" in manifest
         assert manifest["schema"]["embedded"]["type"] == "object"
 
-    def test_manifest_path_is_string(self):
+    def test_manifest_content_has_module_and_class(self):
         from ms_dsc.cli import _generate_manifest
         manifest = _generate_manifest("Cli/GetOnly", _CliGetOnlyResource)
-        assert isinstance(manifest["path"], str)
-        assert len(manifest["path"]) > 0
+        assert "content" in manifest
+        assert isinstance(manifest["content"]["module"], str)
+        assert isinstance(manifest["content"]["class"], str)
+        assert len(manifest["content"]["module"]) > 0
+        assert len(manifest["content"]["class"]) > 0
 
     def test_get_only_capabilities(self):
         from ms_dsc.cli import _generate_manifest

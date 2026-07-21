@@ -15,6 +15,7 @@ import enum
 import inspect
 import types
 import typing
+from typing import Any, cast
 
 
 def generate_schema(cls: type) -> dict:
@@ -29,13 +30,13 @@ def generate_schema(cls: type) -> dict:
     """
     if hasattr(cls, "get_schema") and callable(cls.get_schema):
         try:
-            return cls.get_schema()
+            return cast(dict, cls.get_schema())
         except Exception:
             pass
 
     if hasattr(cls, "schema") and callable(cls.schema):
         try:
-            return cls.schema()
+            return cast(dict, cls.schema())
         except Exception:
             pass
 
@@ -54,7 +55,7 @@ def _get_schema_type(cls: type) -> type | None:
 
     for base in getattr(cls, "__orig_bases__", ()):
         args = typing.get_args(base)
-        if len(args) == 1 and dataclasses.is_dataclass(args[0]):
+        if len(args) == 1 and isinstance(args[0], type) and dataclasses.is_dataclass(args[0]):
             return args[0]
     return None
 
@@ -93,7 +94,7 @@ def _dataclass_to_json_schema(cls: type) -> dict:
     return schema
 
 
-def _type_to_schema(t: type) -> dict:  # noqa: C901 (complexity acceptable for type mapping)
+def _type_to_schema(t: Any) -> dict:  # noqa: C901 (complexity acceptable for type mapping)
     # Python 3.10+ union syntax: X | Y
     if isinstance(t, types.UnionType):
         args = typing.get_args(t)

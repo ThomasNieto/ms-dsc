@@ -57,7 +57,7 @@ class GreetingResource(DscResource[GreetingSchema], Gettable):
     no persistent state, get() simply computes the greeting and returns it.
 
     Illustrates: minimal resource, get() only, no side effects.
-    """}
+    """
 
     schema_provider = DataclassSchemaProvider(GreetingSchema)
 

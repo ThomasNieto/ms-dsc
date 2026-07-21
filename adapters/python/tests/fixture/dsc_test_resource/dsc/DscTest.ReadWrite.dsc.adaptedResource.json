@@ -10,7 +10,10 @@
     "delete"
   ],
   "requireAdapter": "Microsoft.Adapter/Python",
-  "path": "C:\\Users\\Thomas\\Documents\\GitHub\\ms-dsc\\adapters\\python\\tests\\fixture\\dsc_test_resource\\resources.py",
+  "content": {
+    "module": "dsc_test_resource.resources",
+    "class": "ReadWriteResource"
+  },
   "description": "Read/write fixture resource backed by an in-process dict.",
   "schema": {
     "embedded": {

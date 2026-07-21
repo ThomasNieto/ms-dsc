@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.metadata
+import inspect
 import json
 import logging
 import sys
@@ -99,11 +100,13 @@ def _get_schema_type(cls: type) -> type | None:
     """Resolve T from DscResource[T] via schema_provider or __orig_bases__."""
     provider = getattr(cls, "schema_provider", None)
     if provider is not None and hasattr(provider, "schema_type"):
-        return provider.schema_type  # type: ignore[no-any-return]
+        schema_type = provider.schema_type  # type: ignore[no-any-return]
+        if inspect.isclass(schema_type) and dataclasses.is_dataclass(schema_type):
+            return schema_type
 
     for base in getattr(cls, "__orig_bases__", ()):
         args = typing.get_args(base)
-        if len(args) == 1 and dataclasses.is_dataclass(args[0]):
+        if len(args) == 1 and inspect.isclass(args[0]) and dataclasses.is_dataclass(args[0]):
             return args[0]
     return None
 
@@ -118,25 +121,36 @@ def _build_schema_instance(cls: type, data: dict) -> Any:
     if dataclasses.is_dataclass(schema_type):
         known = {f.name for f in dataclasses.fields(schema_type)}
         filtered = {k: v for k, v in data.items() if k in known}
-        return schema_type(**filtered)
+        try:
+            return schema_type(**filtered)
+        except Exception as exc:
+            _logger.warning("Failed to instantiate dataclass %s: %s; using raw data", schema_type, exc)
+            return data
 
     # Pydantic BaseModel
     if hasattr(schema_type, "model_validate"):
-        return schema_type.model_validate(data)
+        try:
+            return schema_type.model_validate(data)
+        except Exception as exc:
+            _logger.warning("Failed to validate with %s: %s; using raw data", schema_type, exc)
+            return data
 
     try:
         return schema_type(**data)
-    except Exception:
+    except Exception as exc:
+        _logger.warning("Failed to instantiate %s: %s; using raw data", schema_type, exc)
         return data
 
 
 def _to_dict(obj: Any) -> dict:
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return dataclasses.asdict(obj)
     if isinstance(obj, dict):
         return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return dataclasses.asdict(obj)
+    if not isinstance(obj, type) and hasattr(obj, "model_dump") and callable(obj.model_dump):
+        result = obj.model_dump()
+        if isinstance(result, dict):
+            return result
     raise TypeError(f"Cannot serialise {type(obj)!r} to dict")
 
 
@@ -146,12 +160,23 @@ def _do_get(resource: Any, instance: Any) -> int:
     return 0
 
 
+def _get_metadata_return_type(metadata: Any, attr_name: str) -> str:
+    """Extract metadata return type (e.g., 'set_return', 'test_return').
+    
+    Returns the .value attribute if present, otherwise defaults to 'state'.
+    Avoids importing from ms_dsc to keep adapter stdlib-only.
+    """
+    if metadata is None:
+        return "state"
+    obj = getattr(metadata, attr_name, None)
+    return getattr(obj, "value", "state") if obj is not None else "state"
+
+
 def _do_set(resource: Any, instance: Any, metadata: Any) -> int:
     result = resource.set(instance)
     print(json.dumps(_to_dict(result.actual_state)))
 
-    # Use .value attribute so we never import from ms_dsc — adapter is stdlib-only.
-    set_return = getattr(getattr(metadata, "set_return", None), "value", "state") if metadata is not None else "state"
+    set_return = _get_metadata_return_type(metadata, "set_return")
     if set_return == "stateAndDiff":
         print(json.dumps(result.changed_properties or []))
     return 0
@@ -161,8 +186,7 @@ def _do_test(resource: Any, instance: Any, metadata: Any) -> int:
     result = resource.test(instance)
     print(json.dumps(_to_dict(result.actual_state)))
 
-    # Use .value attribute so we never import from ms_dsc — adapter is stdlib-only.
-    test_return = getattr(getattr(metadata, "test_return", None), "value", "state") if metadata is not None else "state"
+    test_return = _get_metadata_return_type(metadata, "test_return")
     if test_return == "stateAndDiff":
         print(json.dumps(result.differing_properties or []))
     return 0

@@ -7,7 +7,10 @@
     "get"
   ],
   "requireAdapter": "Microsoft.Adapter/Python",
-  "path": "C:\\Users\\Thomas\\Documents\\GitHub\\ms-dsc\\adapters\\python\\tests\\fixture\\dsc_test_resource\\resources.py",
+  "content": {
+    "module": "dsc_test_resource.resources",
+    "class": "GetResource"
+  },
   "description": "Read-only fixture resource.  Always reports _exist=True.",
   "schema": {
     "embedded": {

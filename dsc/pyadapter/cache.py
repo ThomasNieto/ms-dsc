@@ -69,10 +69,13 @@ class DscCache:
         """Persist entries to disk; failures are logged and silently swallowed."""
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text(
+            temp_path = self._path.with_suffix(".tmp")
+            temp_path.write_text(
                 json.dumps({"fingerprint": fingerprint, "manifests": entries}),
                 encoding="utf-8",
             )
+            # Atomic rename prevents corruption from concurrent writes
+            temp_path.replace(self._path)
             _logger.debug("Cache saved (%d entries): %s", len(entries), self._path.name)
         except Exception as exc:
             _logger.warning("Failed to save cache %s: %s", self._path.name, exc)

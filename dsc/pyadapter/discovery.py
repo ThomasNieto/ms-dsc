@@ -21,7 +21,10 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import logging
+import urllib.request
 from pathlib import Path
+
+from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
 
 from pyadapter.cache import DISCOVER_CACHE, LIST_CACHE, dist_fingerprint
 
@@ -92,25 +95,21 @@ def _scan_single_dist(dist) -> list[dict]:
 def _scan_editable_source(dist) -> list[dict]:
     """For editable installs, locate the source directory and scan for manifests."""
     try:
-        import json as _json
-        import urllib.request
-        from pathlib import Path as _Path
-
         if not dist.files:
             return []
         url_file = next((f for f in dist.files if "direct_url.json" in str(f)), None)
         if url_file is None:
             return []
 
-        data = _json.loads(dist.locate_file(url_file).read_text(encoding="utf-8"))
+        data = json.loads(dist.locate_file(url_file).read_text(encoding="utf-8"))
         if not data.get("dir_info", {}).get("editable", False):
             return []
 
         url: str = data.get("url", "")
         if url.startswith("file:///"):
-            source_dir = _Path(urllib.request.url2pathname(url[7:]))
+            source_dir = Path(urllib.request.url2pathname(url[7:]))
         elif url.startswith("file://"):
-            source_dir = _Path(url[7:])
+            source_dir = Path(url[7:])
         else:
             return []
 
@@ -122,34 +121,28 @@ def _scan_editable_source(dist) -> list[dict]:
             for manifest_path in source_dir.rglob("*" + suffix):
                 results.append({"manifestPath": str(manifest_path.resolve())})
         return results
+    except (json.JSONDecodeError, ValueError, KeyError) as exc:
+        _logger.debug("Editable scan: invalid direct_url.json for %s: %s", getattr(dist, "name", "?"), exc)
+        return []
     except Exception as exc:
-        _logger.debug("Editable scan failed for %s: %s", getattr(dist, "name", "?"), exc)
+        _logger.warning("Unexpected error scanning editable install %s: %s", getattr(dist, "name", "?"), exc, exc_info=True)
         return []
 
 
 def _capabilities_for(cls: type) -> list[str]:
     """Determine DSC capabilities by checking Protocol membership."""
     caps: list[str] = []
-    try:
-        from ms_dsc.protocols import Deletable, Exportable, Gettable, Settable, Testable
-
-        probe = object.__new__(cls)
-        if isinstance(probe, Gettable):
-            caps.append("get")
-        if isinstance(probe, Settable):
-            caps.append("set")
-        if isinstance(probe, Testable):
-            caps.append("test")
-        if isinstance(probe, Deletable):
-            caps.append("delete")
-        if isinstance(probe, Exportable):
-            caps.append("export")
-    except ImportError:
-        _logger.debug("ms-dsc not available; falling back to hasattr capability detection")
-        probe = object.__new__(cls)
-        for cap in ("get", "set", "test", "delete", "export"):
-            if callable(getattr(probe, cap, None)):
-                caps.append(cap)
+    probe = object.__new__(cls)
+    if isinstance(probe, Gettable):
+        caps.append("get")
+    if isinstance(probe, Settable):
+        caps.append("set")
+    if isinstance(probe, Testable):
+        caps.append("test")
+    if isinstance(probe, Deletable):
+        caps.append("delete")
+    if isinstance(probe, Exportable):
+        caps.append("export")
     return caps
 
 
@@ -233,14 +226,6 @@ def cmd_list() -> int:
     Emit list entries for resources NOT covered by pre-built manifests.
     Results are cached; cache is invalidated when the installed package set changes.
     """
-    # Ensure ms_dsc is available in sys.modules before loading resource entry points.
-    # This allows resources to import ms_dsc without declaring it as a dependency,
-    # since pyadapter loads it from the bundled location (sys.path[0] = CWD).
-    try:
-        import ms_dsc  # noqa: F401
-    except ImportError:
-        _logger.debug("ms-dsc not available in bundled location or pip; resources must declare it as a dependency")
-
     fingerprint = dist_fingerprint()
     entries = LIST_CACHE.load(fingerprint)
     if entries is None:
