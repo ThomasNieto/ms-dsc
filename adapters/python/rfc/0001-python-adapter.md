@@ -1,259 +1,58 @@
-# RFC 0001 — Microsoft.Adapter/Python: Python DSC Resource Adapter
-
-| Field | Value |
-|-------|-------|
-| Status | Draft |
-| Created | 2026-07-02 |
-| Component | `adapters/python/` |
-
+---
+RFC:          0001
+Author:       null
+Sponsor:      null
+Status:       Draft
+SupercededBy: null
+Version:      1.0
+Area:         null
+CommentsDue:  null
 ---
 
-## Summary
+# Microsoft.Adapter/Python: Python DSC Resource Adapter
 
 This RFC describes the design of the `Microsoft.Adapter/Python` DSC v3 adapter,
 the `ms-dsc` Python SDK for resource authors, and the `Microsoft.Python/Discover`
-discovery extension.  Together these components allow DSC resources to be written
+discovery extension. Together these components allow DSC resources to be written
 in Python and discovered/invoked through the standard DSC engine pipeline.
-
----
 
 ## Motivation
 
-DSC v3 has a well-defined adapter contract that enables resources implemented in
-arbitrary languages to participate in the DSC configuration lifecycle.  Python is
-a widely-used language for system automation, and a first-class Python adapter
-lowers the barrier to writing portable DSC resources.  Key goals are:
+> As a system administrator or developer,
+> I want to write DSC resources in Python using familiar language patterns,
+> so that I can manage system state with DSC without learning Rust or PowerShell.
+
+Python is a widely-used language for system automation, and a first-class Python
+adapter lowers the barrier to writing portable DSC resources. Key goals are:
 
 1. **Zero friction** — resource authors install one package (`ms-dsc`) and follow
    familiar Python patterns (dataclasses, typing, logging).
-2. **No mandatory Rust or .NET dependency** — the entire adapter runtime is pure
+2. **No mandatory Rust or PowerShell dependency** — the entire adapter runtime is pure
    Python, stdlib only; it ships alongside the DSC binary.
 3. **Discoverable by default** — resources are auto-discovered without needing to
    maintain hand-written manifest files.
 4. **Idiomatic Python** — the SDK leverages dataclasses, type hints, structural
    protocols, and entry points.
 
----
+## Proposed experience
 
-## Design
-
-### Component overview
-
-```
-adapters/python/
-├── pyadapter/                   # Adapter runtime — stdlib only, ships with DSC
-│   ├── __main__.py              # Entry: python -m pyadapter <verb>
-│   ├── cli.py                   # Argument parser + __main__ guard for -m invocation
-│   ├── router.py                # Operation dispatch (get/set/test/delete/export)
-│   ├── discovery.py             # list + discover commands
-│   ├── cache.py                 # Fingerprint-keyed disk cache
-│   ├── schema.py                # JSON Schema generation (delegates to ms_dsc.schema)
-│   └── logging.py               # DscLogHandler → DSC JSON stderr
-├── ms-dsc/                      # SDK — published to PyPI, installed by resource authors
-│   ├── ms_dsc/
-│   │   ├── resource.py          # DscResource[T] base class
-│   │   ├── protocols.py         # Gettable / Settable / Testable / Deletable / Exportable
-│   │   ├── metadata.py          # @dsc_resource decorator, SetReturn, TestReturn
-│   │   ├── results.py           # SetResult[T], TestResult[T]
-│   │   ├── schema/              # DataclassSchemaProvider, PydanticSchemaProvider
-│   │   ├── build/hatchling.py   # Hatchling build hook (dsc-gen at wheel-build time)
-│   │   ├── cli.py               # dsc-gen manifest command
-│   │   └── logging.py           # DscLogHandler for SDK users
-│   └── pyproject.toml
-├── Microsoft.Adapter.Python.dsc.resource.json   # Adapter manifest (Windows)
-├── Microsoft.Adapter.Python3.dsc.resource.json  # Adapter manifest (Linux/macOS)
-└── tests/
-    ├── unit/                    # 160+ pytest tests (no DSC required)
-    ├── fixture/                 # dsc-test-resource: installable test package
-    └── integration/             # Pester component + DSC CLI tests
-```
-
-```
-extensions/python/
-├── python.dsc.extension.json    # Discovery extension manifest
-└── python.discover.py           # Scans Python distributions for manifests
-```
-
-### Separation of concerns
-
-| Layer | Dependency | Purpose |
-|-------|------------|---------|
-| `pyadapter` | **ms-dsc** (bundled) | Invoked by DSC engine per operation |
-| `ms-dsc` SDK | **zero mandatory runtime deps** | Used by resource authors |
-| `Microsoft.Python/Discover` | **stdlib only** | Scans distributions at DSC startup |
-
-The adapter runtime (`pyadapter`) requires the bundled `ms-dsc` SDK, which ships
-alongside it in the DSC package. This simplifies the adapter code (no defensive
-fallback patterns) and guarantees access to protocol introspection for capability
-detection.
-
-### Adapter invocation — module vs script
-
-DSC invokes the adapter as a Python **module**, not a script path:
-
-```
-python -m pyadapter.cli <verb> [--resource TYPE]    # Windows
-python3 -m pyadapter.cli <verb> [--resource TYPE]   # Linux/macOS
-```
-
-This is the standard Python `-m` invocation.  Python sets `sys.path[0] = ''`
-(the current working directory) for module invocations.  DSC always sets the
-working directory to the manifest's containing directory (the DSC install dir),
-so both `pyadapter/` and the bundled `ms_dsc/` are importable via `sys.path[0]`
-without any PYTHONPATH manipulation.
-
-The legacy `python ./pyadapter/__main__.py <verb>` form is supported for
-development and backward compatibility via `__main__.py`, but the DSC manifests
-use the `-m` form.
-
-### Platform manifests
-
-Two adapter manifests cover cross-platform Python executable differences:
-
-| Manifest | Platform(s) | Executable | Condition |
-|----------|-------------|-----------|-----------|
-| `Microsoft.Adapter.Python.dsc.resource.json` | Windows | `python` | `python` on PATH |
-| `Microsoft.Adapter.Python3.dsc.resource.json` | Linux, macOS | `python3` | `python3` on PATH |
-
-Both manifests declare the same resource type (`Microsoft.Adapter/Python`) and
-identical argument structures.  The build system (`data.build.json`) includes the
-appropriate manifest in each platform's package — they never appear together in a
-single installation.
-
-### ms_dsc bundling
-
-The `ms_dsc` SDK is bundled into the DSC package alongside `pyadapter/` so that
-user resources can `import ms_dsc` out-of-the-box, without a separate
-`pip install ms-dsc`.
-
-**Build-time copy** — `Copy-PythonAdapterSdk` in `helpers.build.psm1` copies
-`adapters/python/ms-dsc/ms_dsc/` to `<artifact-bin>/ms_dsc/` at build time,
-excluding:
-- `build/` — the Hatchling build hook (not needed at adapter runtime)
-- `__pycache__/` — compiled bytecache (regenerated on first run)
-
-**Version source of truth** — `adapters/python/ms-dsc/` remains the canonical
-source; the bundled copy is always generated from it.
-
-**sys.path resolution** — because DSC sets CWD to the manifest directory when
-invoking the adapter, Python's `-m` invocation places `''` (CWD) at `sys.path[0]`.
-The bundled `ms_dsc/` is in that same directory, so `import ms_dsc` resolves to
-the bundled version automatically.  If a user has a different version installed
-via pip, the bundled version takes precedence (CWD precedes site-packages in
-`sys.path`).
-
-**Plugin pattern — resource dependencies** — Because DSC pre-loads bundled ms_dsc
-before discovering resources, resource packages do NOT declare `ms-dsc` as a
-runtime dependency.  Instead, `ms-dsc` is declared only in `[build-system] requires`
-for schema generation, decorators, and IDE support:
+A resource author creates a Python package with `ms-dsc` as a build-time
+dependency:
 
 ```toml
 [build-system]
-requires = ["hatchling", "ms-dsc"]  # Build-time only
+requires = ["hatchling", "ms-dsc"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.dsc]
+# Generates *.dsc.adaptedResource.json manifests at wheel-build time
 
 [project]
-dependencies = []                    # Runtime: empty (ms-dsc provided by DSC)
+dependencies = []  # ms-dsc is provided at runtime by DSC
 ```
 
-This follows the plugin pattern used by pytest, Flask, and Jupyter: the framework
-provides the SDK at runtime, and plugins don't declare it as a dependency.  Resources
-can be safely installed outside DSC without forcing users to install the DSC SDK.
-
-**Version compatibility** — The bundled ms_dsc version is recorded in the DSC
-release notes.  Resource authors should ensure their code is compatible with the
-bundled ms_dsc version shipped with DSC.  Breaking API changes require a MAJOR
-version bump in ms-dsc and corresponding DSC release notes.
-
-### Discovery pipeline
-
-```
-DSC engine startup
-    │
-    ├─► Microsoft.Python/Discover (extension)
-    │       python extensions/python/python.discover.py
-    │       • Uses importlib.resources to locate <pkg>.dsc/*.dsc.adaptedResource.json
-    │       • Normalises distribution names (hyphens→underscores) for package lookup
-    │       • Emits {"manifestPath": "<abs_path>"} per manifest found
-    │       • No caching — importlib.resources lookup is fast at startup
-    │
-    └─► Microsoft.Adapter/Python → adapter.list (fallback)
-            python -m pyadapter.cli list
-            • Enumerates importlib.metadata entry_points(group="microsoft.dsc.resources")
-            • Returns list entries for resources WITHOUT pre-built manifests
-            • Results cached in ~/.dsc/PythonListCache.json
-```
-
-### Pre-loading ms_dsc for the plugin pattern
-
-To enable the plugin pattern (resources without ms-dsc runtime dependencies), the
-adapter must pre-load ms_dsc before discovering and loading resource entry points.
-
-When the adapter's `list` command runs (`python -m pyadapter.cli list`):
-
-1. The adapter immediately executes `import ms_dsc` (catching ImportError if the
-   bundled copy is unavailable, which only occurs in non-DSC contexts).
-2. This populates `sys.modules['ms_dsc']`, making it available to all subsequently
-   loaded resource modules.
-3. Only then does the adapter enumerate `importlib.metadata.entry_points(group="microsoft.dsc.resources")`
-   and load resource entry points via `ep.load()`.
-4. Each resource module (e.g., `from ms_dsc import DscResource, SetResult`)
-   imports from the already-populated `sys.modules['ms_dsc']` without declaring
-   a runtime dependency.
-
-This early import ensures that resource classes can use `from ms_dsc import ...`
-at module load time, even though `ms-dsc` is not in their `dependencies`.
-
-### Operation dispatch (content-based resolution)
-
-When DSC invokes the adapter for a resource operation, it injects the `content`
-field from the adapted resource manifest via `adaptedContentArg`:
-
-```
-python -m pyadapter.cli get --resource TYPE --content '{"module":"pkg.res","class":"Cls"}'
-```
-
-The adapter's `_resolve_class` uses `importlib.import_module(module)` + `getattr(mod, class_name)`
-for direct, fast resolution — no entry-point scanning required.  For resources discovered
-via `adapter.list` (no pre-built manifest), the `--content` argument is absent and the
-adapter falls back to `importlib.metadata.entry_points` lookup.
-
-This two-tier approach means:
-
-| Resource type | Discovery | Dispatch |
-|---|---|---|
-| Pre-built manifest (pip wheel or bundled) | `importlib.resources` / DSC bin scan | `importlib.import_module` via `adaptedContentArg` |
-| Dev install, no manifest | `adapter.list` (entry_points) | entry_points fallback |
-
-### Operation dispatch
-
-For each DSC operation, the adapter:
-
-1. Reads `--resource TYPE` from argv.
-2. Resolves the resource class from `importlib.metadata.entry_points(group="microsoft.dsc.resources")`, case-insensitively.
-3. Reads JSON from stdin.
-4. Constructs the schema instance (dataclass or Pydantic model) from JSON, discarding unknown fields.
-5. Dispatches to the matching Protocol method (`get`, `set`, `test`, `delete`, `export`).
-6. Serialises the result to stdout following the DSC adapter contract.
-
-```
-stdin (JSON)  →  schema instance (T)  →  resource.method(instance)  →  stdout (NDJSON)
-```
-
-stdout contract:
-
-| Operation | stdout lines |
-|-----------|-------------|
-| `get` | 1 — actual state JSON |
-| `set` (state) | 1 — actual state JSON |
-| `set` (stateAndDiff) | 2 — actual state, then `["prop", ...]` |
-| `test` (state) | 1 — actual state JSON |
-| `test` (stateAndDiff) | 2 — actual state, then `["prop", ...]` |
-| `delete` | 0 |
-| `export` | 0..N — one JSON line per instance |
-
-### SDK design
-
-Resource authors inherit from `DscResource[T]` and implement capability Protocols:
+They implement their resource by inheriting from `DscResource[T]` and implementing
+the capability protocols they need:
 
 ```python
 from dataclasses import dataclass, field
@@ -270,6 +69,8 @@ class GreetingSchema:
 @dsc_resource(
     type="Example/Greeting",
     version="1.0.0",
+    description="A resource that manages greeting messages.",
+    tags=["example"],
     set_return=SetReturn.STATE_AND_DIFF,
     test_return=TestReturn.STATE_AND_DIFF,
 )
@@ -294,115 +95,193 @@ class GreetingResource(DscResource[GreetingSchema]):
             yield self.get(GreetingSchema(name=name))
 ```
 
-#### Schema type: dataclass vs Pydantic
-
-Both are supported.  Dataclasses are preferred for resources that want zero
-dependencies (beyond `ms-dsc` itself).  Pydantic is supported for resources that
-already use it or need advanced validation.
-
-| | Dataclass | Pydantic |
-|--|-----------|---------|
-| Extra deps | None | `pydantic` |
-| Provider | `DataclassSchemaProvider` | `PydanticSchemaProvider` |
-| Schema draft | JSON Schema draft-07 | JSON Schema draft-07 via Pydantic |
-| Validation | Adapter silently ignores unknown fields | Pydantic validates at construction |
-
-#### Capability Protocols
-
-Capabilities are declared structurally — no explicit inheritance needed:
-
-```python
-class MyResource(DscResource[MySchema]):
-    # Implementing get() makes this instance of Gettable
-    def get(self, instance): ...
-    # Implementing set() makes this instance of Settable
-    def set(self, instance): ...
-```
-
-The `@runtime_checkable` Protocols allow `isinstance()` checks without inheritance,
-which the adapter and `dsc-gen` use to determine which capabilities to advertise.
-
-#### Metadata and return modes
-
-`@dsc_resource(set_return=SetReturn.STATE_AND_DIFF)` controls whether `set()` emits
-one or two stdout lines.  This maps to DSC's `return: stateAndDiff` manifest field.
-
-When `set_return=SetReturn.STATE` (default), the adapter emits only the actual
-state.  When `STATE_AND_DIFF`, the adapter additionally emits a JSON array of
-changed property names.  `set()` MUST populate `SetResult.changed_properties`
-with a list (possibly empty) when `STATE_AND_DIFF` is active.
-
-### `dsc-gen manifest` — manifest generation
-
-The `dsc-gen manifest` CLI reads `pyproject.toml`, imports each resource class,
-and writes one `*.dsc.adaptedResource.json` per resource.  The files are included
-in the wheel as package data, enabling the discovery extension to locate them
-without importing Python.
-
-**At build time** (Hatchling build hook):
-
-```toml
-[build-system]
-requires = ["hatchling", "ms-dsc"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.hooks.dsc]
-# output_dir = "my_package/dsc"  # defaults to <package_name>/dsc/
-```
-
-**Manually:**
+After the package is built and installed, DSC automatically discovers the resource
+through the `Microsoft.Python/Discover` extension. Manifests can also be generated
+manually:
 
 ```bash
-cd my-resource-package/
 dsc-gen manifest
 ```
 
-### Logging
+## Specification
 
-The DSC engine reads structured JSON from adapter stderr:
+### Components
 
-```json
-{"info": "file_presence.resource: Getting /tmp/hello.txt"}
-```
+Three cooperating components implement the Python adapter:
 
-Resource authors use Python's standard `logging` module — no DSC-specific API:
+| Component | Shipped as | Purpose |
+|-----------|------------|---------|
+| `pyadapter` | Bundled with DSC | Adapter runtime invoked by DSC per operation |
+| `ms-dsc` SDK | PyPI + bundled with DSC | Used by resource authors; provides `DscResource`, protocols, and schema generation |
+| `Microsoft.Python/Discover` | Bundled with DSC | Discovery extension; scans Python distributions at DSC startup |
+
+The `ms-dsc` SDK is bundled alongside `pyadapter` in the DSC install directory,
+providing the SDK at runtime so resource packages do not need to declare it as a
+runtime dependency.
+
+### Platform manifests
+
+Two adapter manifests provide cross-platform support:
+
+| Manifest | Platform(s) | Executable |
+|----------|-------------|-----------|
+| `python.dsc.resource.json` | Windows | `python` |
+| `python3.dsc.resource.json` | Linux, macOS | `python3` |
+
+Both declare the resource type `Microsoft.Adapter/Python`. Only the appropriate
+manifest is included in each platform's package.
+
+### SDK public API
+
+#### `DscResource[T]`
+
+Base class for all Python DSC resources. `T` is the schema type (dataclass or
+Pydantic model) that defines the resource's state.
+
+#### Capability protocols
+
+Capabilities are declared by implementing the corresponding methods. No explicit
+interface inheritance is required.
+
+| Protocol | Method signature | DSC capability |
+|----------|-----------------|----------------|
+| `Gettable` | `get(self, instance: T) -> T` | `get` |
+| `Settable` | `set(self, instance: T) -> SetResult[T]` | `set` |
+| `Testable` | `test(self, instance: T) -> TestResult[T]` | `test` |
+| `Deletable` | `delete(self, instance: T) -> None` | `delete` |
+| `Exportable` | `export(self, instance: T \| None) -> Iterator[T]` | `export` |
+
+#### `@dsc_resource` decorator
+
+Annotates a `DscResource` subclass with its DSC type identifier and behavioural
+metadata:
 
 ```python
-import logging
-logger = logging.getLogger(__name__)
-logger.info("Getting %s", path)
+@dsc_resource(
+    type="Vendor/ResourceName",   # Required: DSC resource type identifier
+    version="1.0.0",              # Required: semver string
+    description="...",            # Optional: resource description
+    tags=["tag1", "tag2"],        # Optional: list of tags for discovery filtering
+    set_return=SetReturn.STATE,   # Optional: STATE (default) or STATE_AND_DIFF
+    test_return=TestReturn.STATE, # Optional: STATE (default) or STATE_AND_DIFF
+)
 ```
 
-The adapter installs `DscLogHandler` on the root logger before dispatching any
-operation, translating Python log records to DSC's JSON format.  Log verbosity is
-controlled by `DSC_TRACE_LEVEL` (`trace`/`debug`/`info`/`warn`/`error`).
+#### Return types
 
-### Cache design
+```python
+@dataclass
+class SetResult(Generic[T]):
+    actual_state: T
+    changed_properties: list[str]  # Required when set_return=STATE_AND_DIFF
 
-The adapter's `list` fallback uses a JSON cache keyed by a fingerprint of all
-installed distributions (`name==version|...` sorted).  When the fingerprint
-changes (package installed/upgraded/removed), the cache is automatically
-invalidated and rebuilt on the next invocation.  An additional path-existence
-check ensures stale entries from removed packages are evicted.
+@dataclass
+class TestResult(Generic[T]):
+    actual_state: T
+    differing_properties: list[str]  # Required when test_return=STATE_AND_DIFF
+```
 
-Cache location:
-- Windows: `%LOCALAPPDATA%\.dsc\PythonListCache.json`
-- Linux/macOS: `~/.dsc/PythonListCache.json`
+#### Schema providers
 
----
+| Provider | Schema source | Additional requirement |
+|----------|--------------|----------------------|
+| `DataclassSchemaProvider` | Python dataclass | None (stdlib only) |
+| `PydanticSchemaProvider` | Pydantic model | `pydantic` package |
 
-## Alternatives considered
+### Adapted resource manifest format
 
-### Alternative A: Single Python file adapter (no package structure)
+Manifests are generated by `dsc-gen manifest` and packaged as package data at
+`<package_name>/dsc/*.dsc.adaptedResource.json`. The `content` field is a JSON
+object that encodes the Python module and class used for operation dispatch:
+
+```json
+{
+  "manifestVersion": "1.0",
+  "type": "Vendor/ResourceName",
+  "version": "1.0.0",
+  "description": "A resource that manages greeting messages.",
+  "tags": ["example"],
+  "adapter": {
+    "type": "Microsoft.Adapter/Python"
+  },
+  "content": {
+    "module": "vendor_resource.resource",
+    "class": "ResourceClass"
+  },
+  "get": { "input": "stdin" },
+  "set": { "input": "stdin", "return": "stateAndDiff" },
+  "test": { "input": "stdin", "return": "stateAndDiff" },
+  "schema": {
+    "embedded": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name to greet."
+        },
+        "message": {
+          "type": "string",
+          "description": "Greeting message.",
+          "default": ""
+        }
+      },
+      "required": ["name"]
+    }
+  }
+}
+```
+
+### Stdin/stdout contract
+
+The adapter reads a JSON object from stdin and writes results to stdout as
+newline-delimited JSON (NDJSON). Unknown input fields are silently ignored.
+
+| Operation | stdin | stdout lines |
+|-----------|-------|-------------|
+| `get` | Desired state | 1 — actual state |
+| `set` (STATE) | Desired state | 1 — actual state |
+| `set` (STATE_AND_DIFF) | Desired state | 2 — actual state, then `["changedProp", ...]` |
+| `test` (STATE) | Desired state | 1 — actual state |
+| `test` (STATE_AND_DIFF) | Desired state | 2 — actual state, then `["differingProp", ...]` |
+| `delete` | Desired state | 0 |
+| `export` | Filter or `{}` | 0..N — one object per instance |
+
+### Discovery mechanism
+
+Two discovery paths are supported:
+
+**Extension-based (preferred):** The `Microsoft.Python/Discover` extension scans
+installed Python distributions for `*.dsc.adaptedResource.json` files packaged
+as data in a `<package>/dsc/` directory. This requires the resource to ship
+manifests generated by `dsc-gen manifest`.
+
+**List command (fallback):** The adapter's `list` command enumerates Python
+distributions that declare a `microsoft.dsc.resources` entry point group, and
+returns the resource list to DSC. This supports development installs and resources
+without pre-built manifests.
+
+### Logging contract
+
+Resource authors use Python's standard `logging` module. The adapter translates
+log records to DSC's structured JSON stderr format before dispatching any
+operation:
+
+```json
+{"info": "vendor_resource.resource: Getting /tmp/hello.txt"}
+```
+
+Log verbosity is controlled by the `DSC_TRACE_LEVEL` environment variable
+(`trace` / `debug` / `info` / `warn` / `error`).
+
+## Alternate Proposals and Considerations
+
+### Alternative A: Single Python file adapter
 
 A single-file adapter is simpler to ship but limits testability and extensibility.
-Rejected in favour of the package-based `pyadapter/` structure which:
-- Enables unit testing of individual components.
-- Keeps cache, discovery, router, and logging concerns separate.
-- Allows the discovery extension (`python.discover.py`) to share cache logic.
+Rejected in favour of the package-based adapter structure.
 
 ### Alternative B: Require Pydantic for all resources
 
-Pydantic provides excellent runtime validation.  Rejected as a hard requirement
-because many resources are simple and don't need Pydantic's overhead.  Pydantic
+Pydantic provides excellent runtime validation. Rejected as a hard requirement
+because many resources are simple and don't need Pydantic's overhead. Pydantic
 remains an optional, fully-supported schema backend.

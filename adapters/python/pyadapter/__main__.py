@@ -3,7 +3,7 @@
 """Python DSC adapter entry point.
 
 When the adapter is bundled with DSC, it is invoked via ``python -m pyadapter.cli``
-(see Microsoft.Adapter.Python.dsc.resource.json).  This file enables the alternate
+(see python.dsc.resource.json).  This file enables the alternate
 invocation ``python -m pyadapter`` and handles the legacy script path
 ``python pyadapter/__main__.py``.
 

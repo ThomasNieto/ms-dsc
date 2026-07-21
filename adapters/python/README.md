@@ -8,9 +8,9 @@ for writing Python-based DSC resources.
 
 ```
 adapters/python/
-├── Microsoft.Adapter.Python.dsc.resource.json   # Adapter manifest (Windows — uses 'python')
-├── Microsoft.Adapter.Python3.dsc.resource.json  # Adapter manifest (Linux/macOS — uses 'python3')
-├── pyadapter/                                    # Adapter implementation (stdlib-only)
+├── python.dsc.resource.json   # Adapter manifest (Windows — uses 'python')
+├── python3.dsc.resource.json  # Adapter manifest (Linux/macOS — uses 'python3')
+├── pyadapter/                 # Adapter implementation (stdlib-only)
 │   ├── __main__.py   # Entry point: python -m pyadapter [<verb>] or python -m pyadapter.cli <verb>
 │   ├── cli.py        # Argument parser + __main__ guard for -m pyadapter.cli invocation
 │   ├── router.py     # Operation dispatcher (get/set/test/delete/export)
@@ -128,7 +128,6 @@ DSC discovers Python resources through two mechanisms:
    installs, and bundled (non-pip-installed) resources whose manifests are found directly
    by DSC's own bin-directory scan. No caching is performed; `importlib.resources` lookup
    is fast enough at startup.
-   `~/.dsc/PythonListCache.json`.
 
 ## Writing a Python DSC resource
 
@@ -171,6 +170,7 @@ dependencies = []                    # Runtime: EMPTY (ms-dsc provided by DSC)
 | Package | Resources | Purpose |
 |---------|-----------|---------|
 | `examples/file_presence/` | `Example/FilePresence` | Ensures a file exists or does not exist |
+| `examples/file-resource/` | `Example/File` | Manages file existence and text content |
 | `examples/dsc-example-resource/` | `Example/Greeting`, `Example/Counter`, `Example/EnvVar` | Full demo covering read-only, stateful, and `_exist` patterns |
 
 ### Try the demo package
@@ -196,8 +196,8 @@ Two adapter manifests are provided for cross-platform support:
 
 | Manifest | Platform | Executable | Condition |
 |----------|----------|-----------|-----------|
-| `Microsoft.Adapter.Python.dsc.resource.json` | Windows | `python` | `python` on PATH |
-| `Microsoft.Adapter.Python3.dsc.resource.json` | Linux/macOS | `python3` | `python3` on PATH |
+| `python.dsc.resource.json` | Windows | `python` | `python` on PATH |
+| `python3.dsc.resource.json` | Linux/macOS | `python3` | `python3` on PATH |
 
 Both declare the same resource type (`Microsoft.Adapter/Python`) and use identical
 argument structures — only the executable name differs.

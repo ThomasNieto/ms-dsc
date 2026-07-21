@@ -13,13 +13,13 @@
             "pyadapter/router.py"
         ],
         "Windows": [
-            "Microsoft.Adapter.Python.dsc.resource.json"
+            "python.dsc.resource.json"
         ],
         "Linux": [
-            "Microsoft.Adapter.Python3.dsc.resource.json"
+            "python3.dsc.resource.json"
         ],
         "macOS": [
-            "Microsoft.Adapter.Python3.dsc.resource.json"
+            "python3.dsc.resource.json"
         ]
     }
 }

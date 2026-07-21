@@ -2,8 +2,8 @@
 # Licensed under the MIT License.
 """Unit tests for the Python adapter resource manifests.
 
-Verifies that both the Windows manifest (Microsoft.Adapter.Python.dsc.resource.json)
-and the Unix manifest (Microsoft.Adapter.Python3.dsc.resource.json) are structurally
+Verifies that both the Windows manifest (python.dsc.resource.json)
+and the Unix manifest (python3.dsc.resource.json) are structurally
 correct and consistent with the bundled-SDK invocation design.
 """
 from __future__ import annotations
@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 _ADAPTER_ROOT = Path(__file__).parent.parent.parent.resolve()
-_MANIFEST_WINDOWS = _ADAPTER_ROOT / "Microsoft.Adapter.Python.dsc.resource.json"
-_MANIFEST_UNIX = _ADAPTER_ROOT / "Microsoft.Adapter.Python3.dsc.resource.json"
+_MANIFEST_WINDOWS = _ADAPTER_ROOT / "python.dsc.resource.json"
+_MANIFEST_UNIX = _ADAPTER_ROOT / "python3.dsc.resource.json"
 
 _OPERATIONS = ("adapter.list", "get", "set", "test", "delete", "export", "validate")
 
