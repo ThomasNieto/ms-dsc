@@ -37,9 +37,6 @@ import inspect
 import types
 import typing
 
-from ms_dsc.schema._protocol import SchemaProvider
-
-
 class DataclassSchemaProvider:
     """Generates a JSON Schema dict from a dataclass type."""
 
@@ -93,7 +90,7 @@ def _dataclass_to_json_schema(cls: type) -> dict:
     return schema
 
 
-def _type_to_schema(t: type) -> dict:  # noqa: C901
+def _type_to_schema(t: typing.Any) -> dict:  # noqa: C901
     # Python 3.10+ union syntax: X | Y
     if isinstance(t, types.UnionType):
         return _union_schema(typing.get_args(t))
