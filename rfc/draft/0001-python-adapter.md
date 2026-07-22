@@ -1,11 +1,11 @@
 ---
 RFC:          0001
-Author:       null
+Author:       ThomasNieto
 Sponsor:      null
 Status:       Draft
 SupercededBy: null
 Version:      1.0
-Area:         null
+Area:         Adapter
 CommentsDue:  null
 ---
 
