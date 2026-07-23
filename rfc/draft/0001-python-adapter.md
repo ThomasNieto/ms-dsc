@@ -290,6 +290,37 @@ object that encodes the Python module and class used for operation dispatch:
 }
 ```
 
+#### Runtime-aware cached manifests
+
+When resources are discovered at runtime, the adapter adds two additional fields
+to the `content` object before caching:
+
+- `pythonExecutable` — the Python executable used to discover and invoke this resource (e.g., `python3.11`, `/usr/bin/python3.12`)
+- `venv` — the virtual environment path where this resource was found (e.g., `/opt/venv1`)
+
+These fields are **only present in cached adapted resource manifests** and are never
+included in shipped manifests. They are added during discovery and enable the adapter
+to invoke the resource in the correct Python runtime and virtual environment context.
+
+**Cached manifest example:**
+
+```json
+{
+  "manifestVersion": "1.0",
+  "type": "Example/Greeting",
+  "version": "1.0.0",
+  "adapter": { "type": "Microsoft.Adapter/Python" },
+  "content": {
+    "module": "dsc_example_resource.resources",
+    "class": "GreetingResource",
+    "pythonExecutable": "python3.11",
+    "venv": "/opt/venv1"
+  },
+  "get": { "input": "stdin" },
+  "schema": { "embedded": { } }
+}
+```
+
 ### Stdin/stdout contract
 
 The adapter reads a JSON object from stdin and writes results to stdout as
@@ -331,6 +362,115 @@ operation:
 
 Log verbosity is controlled by the `DSC_TRACE_LEVEL` environment variable
 (`trace` / `debug` / `info` / `warn` / `error`).
+
+### Discovery and invocation flow
+
+```mermaid
+flowchart TD
+    A["DSC Engine<br/>requests resource list"] --> B["Python Adapter<br/>pyadapter"]
+    
+    B --> C{DSC_PYTHON_EXECUTABLE<br/>set?}
+    C -->|Yes| D["Use specified<br/>Python exe"]
+    C -->|No| E["Use system python<br/>python3 Unix / python Windows"]
+    
+    D --> F["Resolve python_exe"]
+    E --> F
+    
+    F --> G{DSC_VENV_PATHS<br/>set?}
+    
+    G -->|No| H["Scan system site-packages"]
+    H --> I["Scan for *.dsc.adaptedResource.json<br/>and entry points"]
+    I --> J["Generate adapted resource manifests"]
+    J --> K["Deduplicate by resource type"]
+    
+    G -->|Yes| L["Parse VENV paths<br/>Windows: ; Unix: :"]
+    L --> M["Initialize VENV loop"]
+    M --> N["Get next VENV path"]
+    
+    N --> O{VENV<br/>exists?}
+    O -->|No| P["Skip, log warning"]
+    P --> Q{More<br/>VENVs?}
+    
+    O -->|Yes| R["Scan for *.dsc.adaptedResource.json<br/>and entry points"]
+    R --> S["Generate adapted resource manifests"]
+    S --> Q
+    
+    Q -->|Yes| N
+    Q -->|No| K
+    
+    K --> T["Add pythonExecutable<br/>and venv to content"]
+    T --> U["Cache all manifests"]
+    
+    U --> V["Return adapted resource manifests<br/>to DSC"]
+    V --> W["DSC invokes resource operation"]
+    
+    W --> X["Adapter reads pythonExecutable<br/>and venv from manifest"]
+    X --> Y{venv<br/>defined?}
+    
+    Y -->|Yes| Z["Spawn subprocess with python_exe<br/>activated in venv"]
+    Y -->|No| AA["Spawn subprocess with python_exe"]
+    
+    Z --> AB["Execute resource operation"]
+    AA --> AB
+    AB --> AC["Return results to DSC"]
+```
+
+### Multi-runtime and virtual environment support
+
+The adapter supports resource discovery and execution across multiple Python runtimes
+and virtual environments, enabling operators to manage resource placement and isolation
+independently of package installation.
+
+#### Operator configuration
+
+Operators control runtime and VENV behavior via environment variables:
+
+| Variable | Platform | Purpose | Example |
+|----------|----------|---------|----------|
+| `DSC_PYTHON_EXECUTABLE` | All | Specifies the Python executable to use | `python3.11`, `/usr/bin/python3.12` |
+| `DSC_VENV_PATHS` | All | Platform-delimited list of virtual environment paths | Windows: `C:\venv1;C:\venv2` / Unix: `/opt/venv1:/opt/venv2` |
+
+**Defaults:**
+- If `DSC_PYTHON_EXECUTABLE` is not set, the adapter uses the system Python (`python` on Windows, `python3` on Unix)
+- If `DSC_VENV_PATHS` is not set, resource discovery searches only system site-packages
+
+**Path delimiters:**
+- Windows: semicolon (`;`)
+- Unix (Linux, macOS): colon (`:`)
+
+#### Discovery flow
+
+1. Resolve the Python executable from `DSC_PYTHON_EXECUTABLE` env var; fallback to system default
+2. If `DSC_VENV_PATHS` is set, parse it into a list of paths using the platform-specific delimiter
+3. For each VENV path (in order):
+   - Validate the VENV exists; skip with a warning if not
+   - Scan for pre-built `*.dsc.adaptedResource.json` manifests in `<venv>/lib/pythonX.Y/site-packages/*/dsc/`
+   - If no manifests found, run the adapter's `list` command in a subprocess with that VENV activated
+   - Collect all discovered resources and tag them with the source VENV path
+4. If no VENVs specified, scan system site-packages using the same process
+5. Deduplicate resources by type and version; last VENV wins (priority order respects list order)
+6. Cache all discovered manifests with the `pythonExecutable` and `venv` fields added to each
+7. Cache key includes the hash of (pythonExecutable, VENV paths) to invalidate when configuration changes
+
+#### Runtime invocation
+
+When DSC invokes a resource operation:
+
+1. The adapter loads the cached adapted resource manifest and reads `pythonExecutable` and `venv`
+2. Spawns a subprocess using the specified `pythonExecutable`
+3. If `venv` is present, activates the VENV by setting `VIRTUAL_ENV` and adjusting `PATH` in the subprocess environment
+4. Executes the resource operation (get, set, test, etc.) in that Python context
+
+#### Error handling
+
+| Scenario | Behavior |
+|----------|----------|
+| VENV path in `DSC_VENV_PATHS` doesn't exist | Skip with warning; continue to next VENV |
+| Python executable not found | Fallback to system default; log warning |
+| Permission denied on VENV | Skip with warning; continue |
+| No resources found in any VENV | Return empty list |
+| Invalid `DSC_PYTHON_EXECUTABLE` path | Raise error; operator must fix configuration |
+| Multiple VENVs have the same resource type | Use first match (respects priority order) |
 
 ## Alternate Proposals and Considerations
 
